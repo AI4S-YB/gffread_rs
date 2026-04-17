@@ -70,4 +70,8 @@ impl Transcript {
             key.eq_ignore_ascii_case("pseudo") || value.to_ascii_lowercase().contains("pseudo")
         })
     }
+
+    pub fn has_cds(&self) -> bool {
+        !self.cds.is_empty()
+    }
 }

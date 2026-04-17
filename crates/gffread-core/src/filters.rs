@@ -71,6 +71,18 @@ fn passes_filters(
         }
     }
 
+    if options.multi_exon_only && transcript.exons.len() <= 1 {
+        return false;
+    }
+
+    if options.coding_only && !transcript.has_cds() {
+        return false;
+    }
+
+    if options.noncoding_only && transcript.has_cds() {
+        return false;
+    }
+
     if options.no_pseudo && transcript.is_pseudo() {
         return false;
     }

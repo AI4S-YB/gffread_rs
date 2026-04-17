@@ -10,6 +10,7 @@ use gffread_core::options::{
 pub enum CommandMode {
     Version,
     Help,
+    UsageError(CompatError),
     Run(RuntimeOptions),
 }
 
@@ -37,6 +38,9 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
     let mut id_filter = None;
     let mut min_length = None;
     let mut max_intron = None;
+    let mut coding_only = false;
+    let mut noncoding_only = false;
+    let mut multi_exon_only = false;
     let mut no_pseudo = false;
     let mut cluster = ClusterOptions::default();
     let mut inputs = Vec::<PathBuf>::new();
@@ -75,6 +79,9 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 })?;
                 range_filter = Some(parse_range(value)?);
             }
+            "-C" => coding_only = true,
+            "--nc" => noncoding_only = true,
+            "-U" => multi_exon_only = true,
             "-g" => {
                 i += 1;
                 let value = args.get(i).ok_or_else(|| {
@@ -163,6 +170,12 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 no_pseudo = true;
                 keep_all_attrs = true;
             }
+            "--add-hasCDS" => {
+                return Ok(CommandMode::UsageError(CompatError::new(
+                    "Error: invalid argument '--add-hasCDS'\n",
+                    1,
+                )));
+            }
             "--sort-alpha" => sort_alpha = true,
             "--sort-by" => {
                 i += 1;
@@ -240,6 +253,9 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
         id_filter,
         min_length,
         max_intron,
+        coding_only,
+        noncoding_only,
+        multi_exon_only,
         no_pseudo,
         cluster,
         input,

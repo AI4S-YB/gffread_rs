@@ -1,0 +1,11 @@
+chr1	src	mRNA	100	300	.	+	.	ID=coding1;geneID=g1;gene_name=G1
+chr1	src	exon	100	150	.	+	.	Parent=coding1
+chr1	src	exon	200	300	.	+	.	Parent=coding1
+chr1	src	CDS	120	150	.	+	0	Parent=coding1
+chr1	src	CDS	200	250	.	+	2	Parent=coding1
+chr1	src	mRNA	400	480	.	+	.	ID=noncoding1;geneID=g2;gene_name=G2
+chr1	src	exon	400	420	.	+	.	Parent=noncoding1
+chr1	src	exon	450	480	.	+	.	Parent=noncoding1
+chr1	src	mRNA	600	650	.	+	.	ID=single1;geneID=g3;gene_name=G3
+chr1	src	exon	600	650	.	+	.	Parent=single1
+chr1	src	CDS	610	640	.	+	0	Parent=single1
