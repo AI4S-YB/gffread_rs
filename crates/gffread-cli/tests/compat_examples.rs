@@ -39,3 +39,30 @@ fn table_conversion_matches_oracle() {
         .assert_matches_oracle(candidate())
         .expect("table output must match oracle");
 }
+
+#[test]
+fn transcript_fasta_matches_oracle() {
+    CompatCase::new("example_transcript_fasta")
+        .in_examples()
+        .args(["-w", "transcripts.fa", "-g", "genome.fa", "annotation.gff"])
+        .expected_files(["transcripts.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("transcript FASTA must match oracle");
+}
+
+#[test]
+fn cds_fasta_with_projected_segments_matches_oracle() {
+    CompatCase::new("example_cds_fasta")
+        .in_examples()
+        .args([
+            "-W",
+            "-x",
+            "transcripts_CDS.fa",
+            "-g",
+            "genome.fa",
+            "annotation.gff",
+        ])
+        .expected_files(["transcripts_CDS.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("CDS FASTA must match oracle");
+}

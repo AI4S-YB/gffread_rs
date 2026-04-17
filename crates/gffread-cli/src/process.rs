@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use gffread_core::compat::CompatError;
 use gffread_core::emit::{gff3, gtf, table};
+use gffread_core::fasta::{load_genome, write_cds_fasta, write_transcript_fasta};
 use gffread_core::loader::gff::load_annotation;
 use gffread_core::options::{MainOutput, RuntimeOptions};
 use gffread_core::VERSION;
@@ -36,14 +37,9 @@ pub fn run_process(args: Vec<String>) -> i32 {
 }
 
 fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
-    if options.genome.is_some()
-        || options.fasta_outputs.transcript.is_some()
-        || options.fasta_outputs.cds.is_some()
-        || options.fasta_outputs.protein.is_some()
-        || options.fasta_outputs.write_exon_segments
-    {
+    if options.fasta_outputs.protein.is_some() {
         return Err(CompatError::new(
-            "Error: FASTA-related options are not implemented in this phase-one step\n",
+            "Error: protein FASTA output (-y) is not implemented in this phase-one step\n",
             1,
         ));
     }
@@ -61,16 +57,14 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
 
     match options.main_output {
         MainOutput::Gff3 => {
-            let output = options.output.ok_or_else(|| {
-                CompatError::new("Error: output file is required in phase-one GFF3 path\n", 1)
-            })?;
-            let mut file = File::create(&output).map_err(|_| {
-                CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
-            })?;
+            if let Some(output) = &options.output {
+                let mut file = File::create(output).map_err(|_| {
+                    CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
+                })?;
 
-            gff3::write_gff3(&mut file, &annotation, VERSION, &command_line)
-                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
-            Ok(())
+                gff3::write_gff3(&mut file, &annotation, VERSION, &command_line)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            }
         }
         MainOutput::Gtf => {
             let output = options.output.ok_or_else(|| {
@@ -82,7 +76,6 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
 
             gtf::write_gtf(&mut file, &annotation)
                 .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
-            Ok(())
         }
         MainOutput::Table => {
             let output = options.output.ok_or_else(|| {
@@ -101,9 +94,36 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
 
             table::write_table(&mut file, &annotation, format)
                 .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
-            Ok(())
         }
     }
+
+    if options.fasta_outputs.transcript.is_some() || options.fasta_outputs.cds.is_some() {
+        let genome_path = options.genome.as_ref().ok_or_else(|| {
+            CompatError::new("Error: -g option is required for options -w/x/y/u/V/N/M !\n", 1)
+        })?;
+        let genome = load_genome(genome_path)?;
+
+        if let Some(path) = &options.fasta_outputs.transcript {
+            let mut file = File::create(path).map_err(|_| {
+                CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
+            })?;
+            write_transcript_fasta(&mut file, &annotation, &genome)?;
+        }
+
+        if let Some(path) = &options.fasta_outputs.cds {
+            let mut file = File::create(path).map_err(|_| {
+                CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
+            })?;
+            write_cds_fasta(
+                &mut file,
+                &annotation,
+                &genome,
+                options.fasta_outputs.write_exon_segments,
+            )?;
+        }
+    }
+
+    Ok(())
 }
 
 fn oracle_command_line(args: &[String]) -> String {
@@ -170,65 +190,67 @@ mod tests {
     }
 
     #[test]
-    fn fasta_related_options_are_rejected_before_gff3_output() {
-        let cases = [
-            (
-                "genome",
-                Some(example_path("genome.fa")),
-                FastaOutputs::default(),
-            ),
-            (
-                "transcript_fasta",
-                None,
-                FastaOutputs {
-                    transcript: Some(PathBuf::from("transcripts.fa")),
-                    ..FastaOutputs::default()
-                },
-            ),
-            (
-                "cds_fasta",
-                None,
-                FastaOutputs {
-                    cds: Some(PathBuf::from("transcripts_CDS.fa")),
-                    ..FastaOutputs::default()
-                },
-            ),
-            (
-                "protein_fasta",
-                None,
-                FastaOutputs {
-                    protein: Some(PathBuf::from("transcripts_prot.fa")),
-                    ..FastaOutputs::default()
-                },
-            ),
-            (
-                "exon_segments",
-                None,
-                FastaOutputs {
-                    write_exon_segments: true,
-                    ..FastaOutputs::default()
-                },
-            ),
-        ];
+    fn protein_fasta_option_is_still_rejected() {
+        let output = temp_output_path("protein_fasta");
+        let result = run_outputs(gff3_options(
+            &output,
+            FastaOutputs {
+                protein: Some(PathBuf::from("transcripts_prot.fa")),
+                ..FastaOutputs::default()
+            },
+            Some(example_path("genome.fa")),
+        ));
 
-        for (case_name, genome, fasta_outputs) in cases {
-            let output = temp_output_path(case_name);
-            let result = run_outputs(gff3_options(&output, fasta_outputs, genome));
+        let err = result.expect_err("protein FASTA should remain unimplemented");
+        assert_eq!(err.exit_code, 1);
+        assert!(
+            err.message.contains("protein FASTA output"),
+            "unexpected error message: {}",
+            err.message
+        );
+        assert!(!output.exists(), "GFF3 output should not be created");
 
-            let err =
-                result.expect_err("FASTA-related options must not silently write GFF3 output");
-            assert_eq!(err.exit_code, 1);
-            assert!(
-                err.message.contains("FASTA-related options"),
-                "unexpected error message: {}",
-                err.message
-            );
-            assert!(
-                !output.exists(),
-                "GFF3 output should not be created for {case_name}"
-            );
+        let _ = fs::remove_file(output);
+    }
 
-            let _ = fs::remove_file(output);
-        }
+    #[test]
+    fn transcript_and_cds_fasta_options_can_run_with_gff3_output() {
+        let output = temp_output_path("transcript_cds_fasta");
+        let transcript_fasta = std::env::temp_dir().join(format!(
+            "gffread-rs-transcripts-{}-{}.fa",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after Unix epoch")
+                .as_nanos()
+        ));
+        let cds_fasta = std::env::temp_dir().join(format!(
+            "gffread-rs-cds-{}-{}.fa",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after Unix epoch")
+                .as_nanos()
+        ));
+
+        let result = run_outputs(gff3_options(
+            &output,
+            FastaOutputs {
+                transcript: Some(transcript_fasta.clone()),
+                cds: Some(cds_fasta.clone()),
+                write_exon_segments: true,
+                ..FastaOutputs::default()
+            },
+            Some(example_path("genome.fa")),
+        ));
+
+        result.expect("transcript and CDS FASTA should be supported");
+        assert!(output.exists(), "GFF3 output should still be written");
+        assert!(transcript_fasta.exists(), "transcript FASTA should be written");
+        assert!(cds_fasta.exists(), "CDS FASTA should be written");
+
+        let _ = fs::remove_file(output);
+        let _ = fs::remove_file(transcript_fasta);
+        let _ = fs::remove_file(cds_fasta);
     }
 }
