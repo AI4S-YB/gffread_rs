@@ -27,7 +27,7 @@ pub fn run_process(args: Vec<String>) -> i32 {
                 let _ = io::stderr().write_all(err.message.as_bytes());
                 err.exit_code
             }
-        }
+        },
         Err(err) => {
             let _ = io::stderr().write_all(err.message.as_bytes());
             err.exit_code
@@ -36,6 +36,18 @@ pub fn run_process(args: Vec<String>) -> i32 {
 }
 
 fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
+    if options.genome.is_some()
+        || options.fasta_outputs.transcript.is_some()
+        || options.fasta_outputs.cds.is_some()
+        || options.fasta_outputs.protein.is_some()
+        || options.fasta_outputs.write_exon_segments
+    {
+        return Err(CompatError::new(
+            "Error: FASTA-related options are not implemented in this phase-one step\n",
+            1,
+        ));
+    }
+
     let annotation = load_annotation(&options.input)?;
     let command_line = oracle_command_line(&options.original_args);
 
@@ -82,4 +94,114 @@ fn workspace_root() -> PathBuf {
         .join("..")
         .canonicalize()
         .expect("workspace root must resolve")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::run_outputs;
+    use gffread_core::options::{FastaOutputs, MainOutput, RuntimeOptions};
+
+    fn example_path(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples")
+            .join(name)
+    }
+
+    fn temp_output_path(case_name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after Unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "gffread-rs-{case_name}-{}-{nanos}.gff",
+            std::process::id()
+        ))
+    }
+
+    fn gff3_options(
+        output: &Path,
+        fasta_outputs: FastaOutputs,
+        genome: Option<PathBuf>,
+    ) -> RuntimeOptions {
+        RuntimeOptions {
+            expose_warnings: false,
+            output: Some(output.to_path_buf()),
+            main_output: MainOutput::Gff3,
+            table_format: None,
+            genome,
+            fasta_outputs,
+            input: example_path("annotation.gff"),
+            inputs: vec![example_path("annotation.gff")],
+            original_args: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn fasta_related_options_are_rejected_before_gff3_output() {
+        let cases = [
+            (
+                "genome",
+                Some(example_path("genome.fa")),
+                FastaOutputs::default(),
+            ),
+            (
+                "transcript_fasta",
+                None,
+                FastaOutputs {
+                    transcript: Some(PathBuf::from("transcripts.fa")),
+                    ..FastaOutputs::default()
+                },
+            ),
+            (
+                "cds_fasta",
+                None,
+                FastaOutputs {
+                    cds: Some(PathBuf::from("transcripts_CDS.fa")),
+                    ..FastaOutputs::default()
+                },
+            ),
+            (
+                "protein_fasta",
+                None,
+                FastaOutputs {
+                    protein: Some(PathBuf::from("transcripts_prot.fa")),
+                    ..FastaOutputs::default()
+                },
+            ),
+            (
+                "exon_segments",
+                None,
+                FastaOutputs {
+                    write_exon_segments: true,
+                    ..FastaOutputs::default()
+                },
+            ),
+        ];
+
+        for (case_name, genome, fasta_outputs) in cases {
+            let output = temp_output_path(case_name);
+            let result = run_outputs(gff3_options(&output, fasta_outputs, genome));
+
+            let err =
+                result.expect_err("FASTA-related options must not silently write GFF3 output");
+            assert_eq!(err.exit_code, 1);
+            assert!(
+                err.message.contains("FASTA-related options"),
+                "unexpected error message: {}",
+                err.message
+            );
+            assert!(
+                !output.exists(),
+                "GFF3 output should not be created for {case_name}"
+            );
+
+            let _ = fs::remove_file(output);
+        }
+    }
 }
