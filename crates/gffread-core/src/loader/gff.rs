@@ -51,6 +51,7 @@ pub fn parse_annotation(text: &str) -> Result<Annotation, CompatError> {
                         .or_else(|| attr(&attrs, "gene_name"))
                         .or_else(|| attr(&attrs, "Name")),
                     attrs,
+                    locus: None,
                     exons: Vec::new(),
                     cds: Vec::new(),
                 };

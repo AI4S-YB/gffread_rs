@@ -1,0 +1,11 @@
+chr1	src	mRNA	100	300	.	+	.	ID=tx1;geneID=g1;gene_name=G1
+chr1	src	exon	100	150	.	+	.	Parent=tx1
+chr1	src	exon	200	300	.	+	.	Parent=tx1
+chr1	src	mRNA	100	300	.	+	.	ID=tx2;geneID=g1;gene_name=G1
+chr1	src	exon	100	150	.	+	.	Parent=tx2
+chr1	src	exon	200	300	.	+	.	Parent=tx2
+chr1	src	mRNA	100	250	.	+	.	ID=tx3;geneID=g1;gene_name=G1
+chr1	src	exon	100	150	.	+	.	Parent=tx3
+chr1	src	exon	200	250	.	+	.	Parent=tx3
+chr1	src	mRNA	120	145	.	+	.	ID=tx4;geneID=g1;gene_name=G1
+chr1	src	exon	120	145	.	+	.	Parent=tx4

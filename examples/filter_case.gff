@@ -1,0 +1,8 @@
+chr1	src	mRNA	100	300	.	+	.	ID=keep1;geneID=g1;gene_name=G1;Name=KeepOne
+chr1	src	exon	100	150	.	+	.	Parent=keep1
+chr1	src	exon	200	300	.	+	.	Parent=keep1
+chr1	src	mRNA	400	420	.	+	.	ID=short1;geneID=g2;gene_name=G2;pseudo=true
+chr1	src	exon	400	420	.	+	.	Parent=short1
+chr2	src	mRNA	100	180	.	-	.	ID=keep2;geneID=g3;gene_name=G3;product=Prot
+chr2	src	exon	100	120	.	-	.	Parent=keep2
+chr2	src	exon	160	180	.	-	.	Parent=keep2

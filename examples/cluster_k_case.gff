@@ -1,0 +1,7 @@
+chr1	src	mRNA	100	500	.	+	.	ID=container;geneID=g1;gene_name=G1
+chr1	src	exon	100	150	.	+	.	Parent=container
+chr1	src	exon	200	250	.	+	.	Parent=container
+chr1	src	exon	400	500	.	+	.	Parent=container
+chr1	src	mRNA	200	500	.	+	.	ID=contained;geneID=g1;gene_name=G1
+chr1	src	exon	200	250	.	+	.	Parent=contained
+chr1	src	exon	400	500	.	+	.	Parent=contained

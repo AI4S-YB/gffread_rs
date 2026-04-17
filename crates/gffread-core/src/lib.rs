@@ -1,6 +1,8 @@
+pub mod cluster;
 pub mod compat;
 pub mod emit;
 pub mod fasta;
+pub mod filters;
 pub mod loader;
 pub mod model;
 pub mod options;

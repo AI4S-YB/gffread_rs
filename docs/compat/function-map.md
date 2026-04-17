@@ -21,10 +21,18 @@ This document records the phase-one compatibility surface implemented in this wo
 ## Output
 
 - GFF3 transcript/exon/CDS emission needed by the current oracle suite maps to `gffread_core::emit::gff3::write_gff3` and its internal transcript writer.
+- GFF3 locus feature emission for the current `-M`/`--cluster-only` oracle suite maps to `gffread_core::emit::locus::write_locus`.
 - GTF transcript/exon/CDS emission needed by the current oracle suite maps to `gffread_core::emit::gtf::write_gtf`.
 - `gffread.cpp::setTableFormat` maps to `gffread_core::emit::table::parse_format`.
 - `gff_utils.cpp::printTableData` maps to `gffread_core::emit::table::write_table`.
 - Upstream file/stdout routing for GFF3, GTF, and table output maps to the `MainOutput` branch handling in `crates/gffread-cli/src/process.rs`.
+
+## Filtering and Clustering
+
+- `loadIDlist` plus `GffLoader::checkFilters` ID include/exclude behavior maps to `gffread_core::filters::apply_filters` and the `IdFilter` runtime options.
+- `GffLoader::checkFilters` range, minimum covered length, maximum intron, no-pseudo, and attribute filtering behavior maps to `gffread_core::filters::apply_filters`, `RangeFilter`, and the GFF3 attribute emission controls.
+- The current oracle-covered subset of `gff_utils.cpp::collectLocusData` maps to `gffread_core::cluster::apply_clustering` and `gffread_core::model::Locus`.
+- The current oracle-covered subset of `GffLoader::redundantTranscripts` maps to `gffread_core::cluster::collapse_redundancy`, including exact intron-chain redundancy, `-Q` relaxed boundary containment, and `-K` contained intron-chain collapse for the minimized fixtures.
 
 ## Sequence Logic
 
@@ -38,6 +46,6 @@ This document records the phase-one compatibility surface implemented in this wo
 ## Phase-One Boundary
 
 - `gff_utils.cpp::adjust_stopcodon` remains for a later compatibility phase.
-- `gff_utils.cpp::collectLocusData` remains for a later compatibility phase.
-- `GffLoader::redundantTranscripts` / `gff_utils.cpp::redundantTranscripts` remains for a later compatibility phase.
-- Advanced filtering, clustering, redundancy detection, and the broader non-phase-one CLI surface remain for later phases.
+- Full `collectLocusData` parity beyond the current minimized `-M`/`--cluster-only` fixtures remains for a later compatibility phase.
+- Full `GffLoader::redundantTranscripts` parity beyond exact intron-chain, `-Q`, and `-K` minimized fixtures remains for a later compatibility phase.
+- Advanced validation, splice/CDS filters, streaming, BED/TLF, complex locus metadata, and the broader non-phase-one CLI surface remain for later phases.
