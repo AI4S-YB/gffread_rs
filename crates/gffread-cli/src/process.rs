@@ -171,7 +171,45 @@ mod tests {
         ))
     }
 
+    struct TempFixtures {
+        root: PathBuf,
+        annotation: PathBuf,
+        genome: PathBuf,
+    }
+
+    impl Drop for TempFixtures {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn copied_example_fixtures(case_name: &str) -> TempFixtures {
+        let root = std::env::temp_dir().join(format!(
+            "gffread-rs-fixtures-{case_name}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("temporary fixture directory should be created");
+
+        let annotation = root.join("annotation.gff");
+        fs::copy(example_path("annotation.gff"), &annotation)
+            .expect("annotation fixture should be copied");
+
+        let genome = root.join("genome.fa");
+        fs::copy(example_path("genome.fa"), &genome).expect("genome fixture should be copied");
+
+        TempFixtures {
+            root,
+            annotation,
+            genome,
+        }
+    }
+
     fn gff3_options(
+        input: &Path,
         output: &Path,
         fasta_outputs: FastaOutputs,
         genome: Option<PathBuf>,
@@ -183,22 +221,24 @@ mod tests {
             table_format: None,
             genome,
             fasta_outputs,
-            input: example_path("annotation.gff"),
-            inputs: vec![example_path("annotation.gff")],
+            input: input.to_path_buf(),
+            inputs: vec![input.to_path_buf()],
             original_args: Vec::new(),
         }
     }
 
     #[test]
     fn protein_fasta_option_is_still_rejected() {
+        let fixtures = copied_example_fixtures("protein_fasta");
         let output = temp_output_path("protein_fasta");
         let result = run_outputs(gff3_options(
+            &fixtures.annotation,
             &output,
             FastaOutputs {
                 protein: Some(PathBuf::from("transcripts_prot.fa")),
                 ..FastaOutputs::default()
             },
-            Some(example_path("genome.fa")),
+            Some(fixtures.genome.clone()),
         ));
 
         let err = result.expect_err("protein FASTA should remain unimplemented");
@@ -215,6 +255,7 @@ mod tests {
 
     #[test]
     fn transcript_and_cds_fasta_options_can_run_with_gff3_output() {
+        let fixtures = copied_example_fixtures("transcript_cds_fasta");
         let output = temp_output_path("transcript_cds_fasta");
         let transcript_fasta = std::env::temp_dir().join(format!(
             "gffread-rs-transcripts-{}-{}.fa",
@@ -232,8 +273,11 @@ mod tests {
                 .expect("system clock should be after Unix epoch")
                 .as_nanos()
         ));
+        let fai_path = example_path("genome.fa.fai");
+        let _ = fs::remove_file(&fai_path);
 
         let result = run_outputs(gff3_options(
+            &fixtures.annotation,
             &output,
             FastaOutputs {
                 transcript: Some(transcript_fasta.clone()),
@@ -241,13 +285,17 @@ mod tests {
                 write_exon_segments: true,
                 ..FastaOutputs::default()
             },
-            Some(example_path("genome.fa")),
+            Some(fixtures.genome.clone()),
         ));
 
         result.expect("transcript and CDS FASTA should be supported");
         assert!(output.exists(), "GFF3 output should still be written");
         assert!(transcript_fasta.exists(), "transcript FASTA should be written");
         assert!(cds_fasta.exists(), "CDS FASTA should be written");
+        assert!(
+            !fai_path.exists(),
+            "process tests must not create FASTA indices in tracked examples"
+        );
 
         let _ = fs::remove_file(output);
         let _ = fs::remove_file(transcript_fasta);
