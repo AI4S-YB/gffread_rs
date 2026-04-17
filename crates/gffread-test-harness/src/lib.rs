@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
 
 use similar::TextDiff;
 use tempfile::TempDir;
@@ -56,8 +57,13 @@ impl CompatCase {
     }
 
     pub fn assert_matches_oracle(&self, candidate: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
-        let oracle = ensure_oracle_binary()?;
-        let oracle_run = self.run_command(&oracle)?;
+        let oracle_run = {
+            let _guard = oracle_run_lock()
+                .lock()
+                .expect("oracle test harness lock should not be poisoned");
+            let oracle = ensure_oracle_binary()?;
+            self.run_command(&oracle)?
+        };
         let candidate_run = self.run_command(candidate.as_ref())?;
 
         let mut failures = Vec::new();
@@ -152,6 +158,11 @@ impl CompatCase {
     }
 }
 
+fn oracle_run_lock() -> &'static Mutex<()> {
+    static ORACLE_RUN_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    ORACLE_RUN_LOCK.get_or_init(|| Mutex::new(()))
+}
+
 struct RunResult {
     status_code: i32,
     stdout: Vec<u8>,
@@ -189,11 +200,14 @@ fn ensure_oracle_binary_with_make(
     make: &Path,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let oracle = repo_root.join("gffread");
-    let status = Command::new(make)
-        .arg("-C")
-        .arg(repo_root)
-        .arg("gffread")
-        .status()?;
+    let mut command = Command::new(make);
+    command.arg("-C").arg(repo_root);
+
+    if let Some(gcldir) = discover_gclib_dir(repo_root) {
+        command.arg(format!("GCLDIR={}", gcldir.display()));
+    }
+
+    let status = command.arg("gffread").status()?;
     if !status.success() {
         return Err("failed to build C++ oracle with make".into());
     }
@@ -201,6 +215,23 @@ fn ensure_oracle_binary_with_make(
         return Err("C++ oracle binary missing after make".into());
     }
     Ok(oracle)
+}
+
+fn discover_gclib_dir(repo_root: &Path) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(parent) = repo_root.parent() {
+        candidates.push(parent.join("gclib"));
+    }
+    candidates.push(repo_root.join(".worktrees").join("gclib"));
+
+    candidates.into_iter().find_map(|candidate| {
+        let has_headers = candidate.join("GBase.h").is_file() && candidate.join("gff.h").is_file();
+        if has_headers {
+            Some(candidate.canonicalize().unwrap_or(candidate))
+        } else {
+            None
+        }
+    })
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn Error>> {
@@ -380,6 +411,53 @@ mod tests {
             fs::read_to_string(oracle).expect("oracle should be readable"),
             "invoked",
             "build helper should refresh the binary even when it already exists"
+        );
+    }
+
+    #[test]
+    fn ensure_oracle_binary_passes_repo_worktrees_gcldir_for_primary_checkout() {
+        let tempdir = TempDir::new().expect("tempdir should be created");
+        let repo_root = tempdir.path().join("repo");
+        fs::create_dir(&repo_root).expect("repo root should be created");
+
+        let gclib_dir = repo_root.join(".worktrees").join("gclib");
+        fs::create_dir_all(&gclib_dir).expect("gclib dir should be created");
+        fs::write(gclib_dir.join("GBase.h"), "").expect("GBase header should exist");
+        fs::write(gclib_dir.join("gff.h"), "").expect("gff header should exist");
+
+        let bin_dir = tempdir.path().join("bin");
+        fs::create_dir(&bin_dir).expect("bin dir should be created");
+        let make_path = bin_dir.join("make");
+        let mut make_script = fs::File::create(&make_path).expect("make script should be created");
+        writeln!(
+            make_script,
+            "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    GCLDIR=*) printf '%s' \"${{arg#GCLDIR=}}\" > \"$2/gcldir.txt\" ;;\n  esac\ndone\nprintf invoked > \"$2/gffread\"\n"
+        )
+        .expect("make script should be written");
+        drop(make_script);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = fs::metadata(&make_path)
+                .expect("make script metadata should exist")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&make_path, permissions).expect("make script should be executable");
+        }
+
+        ensure_oracle_binary_with_make(&repo_root, &make_path)
+            .expect("oracle binary should be ensured");
+
+        assert_eq!(
+            fs::read_to_string(repo_root.join("gcldir.txt"))
+                .expect("make invocation should record the discovered gclib path"),
+            gclib_dir
+                .canonicalize()
+                .expect("gclib path should resolve")
+                .display()
+                .to_string()
         );
     }
 }
