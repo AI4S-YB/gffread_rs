@@ -1,0 +1,18 @@
+[workspace]
+members = [
+    "crates/gffread-cli",
+    "crates/gffread-core",
+    "crates/gffread-test-harness",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+assert_cmd = "2.0"
+similar = "2.6"
+tempfile = "3.15"
+thiserror = "2.0"

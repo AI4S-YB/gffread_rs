@@ -1,0 +1,11 @@
+[package]
+name = "gffread-rs"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+gffread-core = { path = "../gffread-core" }
+
+[dev-dependencies]
+assert_cmd.workspace = true
