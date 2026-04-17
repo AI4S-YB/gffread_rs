@@ -75,3 +75,31 @@ fn cds_fasta_with_projected_segments_matches_oracle() {
         .assert_matches_oracle(candidate())
         .expect("CDS FASTA must match oracle");
 }
+
+#[test]
+fn protein_fasta_matches_oracle() {
+    CompatCase::new("example_protein_fasta")
+        .in_examples()
+        .args(["-y", "transcripts_prot.fa", "-g", "genome.fa", "annotation.gff"])
+        .expected_files(["transcripts_prot.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("protein FASTA must match oracle");
+}
+
+#[test]
+fn combined_transcript_and_protein_fasta_match_oracle() {
+    CompatCase::new("example_combined_fasta")
+        .in_examples()
+        .args([
+            "-w",
+            "transcripts.fa",
+            "-y",
+            "transcripts_prot.fa",
+            "-g",
+            "genome.fa",
+            "annotation.gff",
+        ])
+        .expected_files(["transcripts.fa", "transcripts_prot.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("combined transcript and protein FASTA must match oracle");
+}

@@ -117,6 +117,28 @@ pub fn write_cds_fasta<W: Write>(
     Ok(())
 }
 
+pub fn write_protein_fasta<W: Write>(
+    out: &mut W,
+    annotation: &Annotation,
+    genome: &Genome,
+) -> Result<(), CompatError> {
+    for transcript in &annotation.transcripts {
+        if transcript.cds.is_empty() {
+            continue;
+        }
+
+        let cds = spliced_cds_sequence(transcript, genome)?;
+        let protein = translate(&cds);
+        if protein.is_empty() {
+            continue;
+        }
+
+        write_fasta_record(out, &transcript.id, protein.as_bytes(), false)
+            .map_err(|err| CompatError::new(format!("Error writing FASTA: {err}\n"), 1))?;
+    }
+    Ok(())
+}
+
 pub fn spliced_sequence(
     transcript: &Transcript,
     segments: &[Segment],
@@ -161,6 +183,20 @@ pub fn reverse_complement(seq: &mut Vec<u8>) {
             other => other.to_ascii_uppercase(),
         };
     }
+}
+
+pub fn translate(cds: &[u8]) -> String {
+    let mut protein = cds
+        .chunks(3)
+        .filter(|codon| codon.len() == 3)
+        .map(translate_codon)
+        .collect::<String>();
+
+    if protein.ends_with('.') {
+        protein.pop();
+    }
+
+    protein
 }
 
 fn transcript_defline(transcript: &Transcript) -> String {
@@ -210,6 +246,40 @@ pub fn write_fasta_record<W: Write>(
         out.write_all(b"\n")?;
     }
     Ok(())
+}
+
+pub fn translate_codon(codon: &[u8]) -> char {
+    match upper_codon(codon).as_str() {
+        "TTT" | "TTC" => 'F',
+        "TTA" | "TTG" | "CTT" | "CTC" | "CTA" | "CTG" => 'L',
+        "ATT" | "ATC" | "ATA" => 'I',
+        "ATG" => 'M',
+        "GTT" | "GTC" | "GTA" | "GTG" => 'V',
+        "TCT" | "TCC" | "TCA" | "TCG" | "AGT" | "AGC" => 'S',
+        "CCT" | "CCC" | "CCA" | "CCG" => 'P',
+        "ACT" | "ACC" | "ACA" | "ACG" => 'T',
+        "GCT" | "GCC" | "GCA" | "GCG" => 'A',
+        "TAT" | "TAC" => 'Y',
+        "TAA" | "TAG" | "TGA" => '.',
+        "CAT" | "CAC" => 'H',
+        "CAA" | "CAG" => 'Q',
+        "AAT" | "AAC" => 'N',
+        "AAA" | "AAG" => 'K',
+        "GAT" | "GAC" => 'D',
+        "GAA" | "GAG" => 'E',
+        "TGT" | "TGC" => 'C',
+        "TGG" => 'W',
+        "CGT" | "CGC" | "CGA" | "CGG" | "AGA" | "AGG" => 'R',
+        "GGT" | "GGC" | "GGA" | "GGG" => 'G',
+        _ => 'X',
+    }
+}
+
+fn upper_codon(codon: &[u8]) -> String {
+    codon
+        .iter()
+        .map(|base| (*base as char).to_ascii_uppercase())
+        .collect()
 }
 
 fn finalize_record(
