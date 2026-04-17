@@ -85,12 +85,21 @@ pub fn parse_annotation(text: &str) -> Result<Annotation, CompatError> {
     }
 
     for transcript in &mut transcripts {
-        transcript.exons.sort_by_key(|segment| (segment.start, segment.end));
-        transcript.cds.sort_by_key(|segment| (segment.start, segment.end));
+        transcript
+            .exons
+            .sort_by_key(|segment| (segment.start, segment.end));
+        transcript
+            .cds
+            .sort_by_key(|segment| (segment.start, segment.end));
     }
 
     transcripts.sort_by(|left, right| {
-        (&left.seqid, left.start, left.end, &left.id).cmp(&(&right.seqid, right.start, right.end, &right.id))
+        (&left.seqid, left.start, left.end, &left.id).cmp(&(
+            &right.seqid,
+            right.start,
+            right.end,
+            &right.id,
+        ))
     });
 
     Ok(Annotation { transcripts })
@@ -112,12 +121,18 @@ fn parse_attrs(raw: &str) -> BTreeMap<String, String> {
         }
 
         if let Some((key, value)) = part.split_once('=') {
-            attrs.insert(key.trim().to_owned(), value.trim().trim_matches('"').to_owned());
+            attrs.insert(
+                key.trim().to_owned(),
+                value.trim().trim_matches('"').to_owned(),
+            );
             continue;
         }
 
         if let Some((key, value)) = part.split_once(' ') {
-            attrs.insert(key.trim().to_owned(), value.trim().trim_matches('"').to_owned());
+            attrs.insert(
+                key.trim().to_owned(),
+                value.trim().trim_matches('"').to_owned(),
+            );
         }
     }
 
