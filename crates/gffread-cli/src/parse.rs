@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn preserves_first_positional_input_as_primary() {
         let first_input = example_path("annotation.gff");
-        let second_input = example_path("annotation.gtf");
+        let second_input = example_path("transcripts.gtf");
         let args = vec![first_input.clone(), second_input.clone()];
 
         let mode = parse_args(args.clone()).expect("ordered positional inputs should parse");

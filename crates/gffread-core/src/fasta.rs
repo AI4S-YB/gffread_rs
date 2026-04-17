@@ -146,7 +146,10 @@ pub fn spliced_sequence(
 ) -> Result<Vec<u8>, CompatError> {
     let chrom = genome.get(&transcript.seqid).ok_or_else(|| {
         CompatError::new(
-            format!("Error: couldn't find genomic sequence {}\n", transcript.seqid),
+            format!(
+                "Error: couldn't find genomic sequence {}\n",
+                transcript.seqid
+            ),
             1,
         )
     })?;
@@ -333,7 +336,10 @@ fn write_fasta_index(path: &Path, entries: &[FastaIndexEntry]) -> Result<(), Com
 
     fs::write(&fai_path, text).map_err(|_| {
         CompatError::new(
-            format!("Error: couldn't write FASTA index file {}\n", fai_path.display()),
+            format!(
+                "Error: couldn't write FASTA index file {}\n",
+                fai_path.display()
+            ),
             1,
         )
     })?;
@@ -357,7 +363,8 @@ fn projected_cds_span(transcript: &Transcript) -> Option<(u64, u64)> {
     }
 
     let (first_index, first_segment) = transcript_first_cds_segment(transcript)?;
-    let (coding_start, coding_end) = trimmed_segment_bounds(transcript, first_segment, first_index)?;
+    let (coding_start, coding_end) =
+        trimmed_segment_bounds(transcript, first_segment, first_index)?;
     let coding_pos = if transcript.strand == '-' {
         coding_end
     } else {
@@ -396,13 +403,13 @@ fn segment_len(segment: &Segment) -> u64 {
     segment.end - segment.start + 1
 }
 
-fn spliced_cds_sequence(
-    transcript: &Transcript,
-    genome: &Genome,
-) -> Result<Vec<u8>, CompatError> {
+fn spliced_cds_sequence(transcript: &Transcript, genome: &Genome) -> Result<Vec<u8>, CompatError> {
     let chrom = genome.get(&transcript.seqid).ok_or_else(|| {
         CompatError::new(
-            format!("Error: couldn't find genomic sequence {}\n", transcript.seqid),
+            format!(
+                "Error: couldn't find genomic sequence {}\n",
+                transcript.seqid
+            ),
             1,
         )
     })?;
@@ -456,11 +463,7 @@ fn trimmed_segment_bounds(
 
 fn transcript_first_cds_segment(transcript: &Transcript) -> Option<(usize, &Segment)> {
     if transcript.strand == '-' {
-        transcript
-            .cds
-            .iter()
-            .enumerate()
-            .next_back()
+        transcript.cds.iter().enumerate().next_back()
     } else {
         transcript.cds.iter().enumerate().next()
     }
@@ -472,8 +475,7 @@ fn cds_sequence_len(transcript: &Transcript) -> Option<u64> {
         .iter()
         .enumerate()
         .map(|(index, segment)| {
-            trimmed_segment_bounds(transcript, segment, index)
-                .map(|(start, end)| end - start + 1)
+            trimmed_segment_bounds(transcript, segment, index).map(|(start, end)| end - start + 1)
         })
         .sum()
 }

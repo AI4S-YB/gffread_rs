@@ -46,7 +46,10 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
         || options.fasta_outputs.protein.is_some();
     let genome = if need_genome {
         let genome_path = options.genome.as_ref().ok_or_else(|| {
-            CompatError::new("Error: -g option is required for options -w/x/y/u/V/N/M !\n", 1)
+            CompatError::new(
+                "Error: -g option is required for options -w/x/y/u/V/N/M !\n",
+                1,
+            )
         })?;
         Some(load_genome(genome_path)?)
     } else {
@@ -312,7 +315,10 @@ mod tests {
 
         result.expect("transcript and CDS FASTA should be supported");
         assert!(output.exists(), "GFF3 output should still be written");
-        assert!(transcript_fasta.exists(), "transcript FASTA should be written");
+        assert!(
+            transcript_fasta.exists(),
+            "transcript FASTA should be written"
+        );
         assert!(cds_fasta.exists(), "CDS FASTA should be written");
         assert!(
             !fai_path.exists(),

@@ -80,7 +80,13 @@ fn cds_fasta_with_projected_segments_matches_oracle() {
 fn protein_fasta_matches_oracle() {
     CompatCase::new("example_protein_fasta")
         .in_examples()
-        .args(["-y", "transcripts_prot.fa", "-g", "genome.fa", "annotation.gff"])
+        .args([
+            "-y",
+            "transcripts_prot.fa",
+            "-g",
+            "genome.fa",
+            "annotation.gff",
+        ])
         .expected_files(["transcripts_prot.fa"])
         .assert_matches_oracle(candidate())
         .expect("protein FASTA must match oracle");
