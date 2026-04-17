@@ -2,7 +2,9 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use gffread_core::compat::CompatError;
-use gffread_core::options::{FastaOutputs, MainOutput, RuntimeOptions};
+use gffread_core::options::{
+    ClusterOptions, FastaOutputs, IdFilter, IdFilterMode, MainOutput, RangeFilter, RuntimeOptions,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandMode {
@@ -24,10 +26,19 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
     let mut output = None;
     let mut main_output = MainOutput::Gff3;
     let mut table_format = None;
+    let mut attrs = None;
+    let mut keep_all_attrs = false;
     let mut genome = None;
     let mut fasta_outputs = FastaOutputs::default();
     let mut sort_alpha = false;
     let mut sort_by = None::<String>;
+    let mut range_filter = None;
+    let mut range_within = false;
+    let mut id_filter = None;
+    let mut min_length = None;
+    let mut max_intron = None;
+    let mut no_pseudo = false;
+    let mut cluster = ClusterOptions::default();
     let mut inputs = Vec::<PathBuf>::new();
 
     let mut i = 0;
@@ -36,6 +47,20 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
             "-E" | "-v" => expose_warnings = true,
             "-T" | "--gtf" => main_output = MainOutput::Gtf,
             "-W" => fasta_outputs.write_exon_segments = true,
+            "-R" => range_within = true,
+            "-M" | "--merge" => cluster.merge = true,
+            "-Q" => {
+                cluster.merge = true;
+                cluster.relax_boundary_containment = true;
+            }
+            "-K" => {
+                cluster.merge = true;
+                cluster.collapse_contained = true;
+            }
+            "--cluster-only" => {
+                cluster.merge = true;
+                cluster.cluster_only = true;
+            }
             "-o" => {
                 i += 1;
                 let value = args.get(i).ok_or_else(|| {
@@ -43,12 +68,33 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 })?;
                 output = Some(PathBuf::from(value));
             }
+            "-r" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option -r requires an argument\n", 1)
+                })?;
+                range_filter = Some(parse_range(value)?);
+            }
             "-g" => {
                 i += 1;
                 let value = args.get(i).ok_or_else(|| {
                     CompatError::new("Error: option -g requires an argument\n", 1)
                 })?;
                 genome = Some(PathBuf::from(value));
+            }
+            "-i" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option -i requires an argument\n", 1)
+                })?;
+                max_intron = Some(parse_u64_arg(value, "-i")?);
+            }
+            "-l" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option -l requires an argument\n", 1)
+                })?;
+                min_length = Some(parse_u64_arg(value, "-l")?);
             }
             "-w" => {
                 i += 1;
@@ -79,6 +125,44 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 table_format = Some(value.clone());
                 main_output = MainOutput::Table;
             }
+            "--attrs" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option --attrs requires an argument\n", 1)
+                })?;
+                attrs = Some(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|part| !part.is_empty())
+                        .map(str::to_owned)
+                        .collect(),
+                );
+            }
+            "--ids" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option --ids requires an argument\n", 1)
+                })?;
+                id_filter = Some(IdFilter {
+                    path: PathBuf::from(value),
+                    mode: IdFilterMode::Include,
+                });
+            }
+            "--nids" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option --nids requires an argument\n", 1)
+                })?;
+                id_filter = Some(IdFilter {
+                    path: PathBuf::from(value),
+                    mode: IdFilterMode::Exclude,
+                });
+            }
+            "--no-pseudo" => {
+                no_pseudo = true;
+                keep_all_attrs = true;
+            }
             "--sort-alpha" => sort_alpha = true,
             "--sort-by" => {
                 i += 1;
@@ -104,6 +188,14 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
             "Error: options --sort-by and --sort-alpha are mutually exclusive!\n",
             1,
         ));
+    }
+
+    if range_within && range_filter.is_none() {
+        return Err(CompatError::new("Error: option -R requires -r!\n", 1));
+    }
+
+    if let Some(range) = &mut range_filter {
+        range.fully_within = range_within;
     }
 
     if genome.is_none()
@@ -140,12 +232,51 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
         output,
         main_output,
         table_format,
+        attrs,
+        keep_all_attrs,
         genome,
         fasta_outputs,
+        range_filter,
+        id_filter,
+        min_length,
+        max_intron,
+        no_pseudo,
+        cluster,
         input,
         inputs,
         original_args: args,
     }))
+}
+
+fn parse_u64_arg(value: &str, option: &str) -> Result<u64, CompatError> {
+    value
+        .parse()
+        .map_err(|_| CompatError::new(format!("Error: invalid value for option {option}\n"), 1))
+}
+
+fn parse_range(raw: &str) -> Result<RangeFilter, CompatError> {
+    let (prefix, coords) = raw
+        .split_once(':')
+        .ok_or_else(|| CompatError::new("Error: invalid -r range format\n", 1))?;
+    let (start, end) = coords
+        .split_once('-')
+        .ok_or_else(|| CompatError::new("Error: invalid -r range format\n", 1))?;
+
+    let mut chars = prefix.chars();
+    let first = chars.next().unwrap_or_default();
+    let (strand, seqid) = if matches!(first, '+' | '-') {
+        (Some(first), chars.as_str().to_owned())
+    } else {
+        (None, prefix.to_owned())
+    };
+
+    Ok(RangeFilter {
+        seqid,
+        strand,
+        start: parse_u64_arg(start, "-r")?,
+        end: parse_u64_arg(end, "-r")?,
+        fully_within: false,
+    })
 }
 
 #[cfg(test)]

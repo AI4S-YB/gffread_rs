@@ -1,25 +1,47 @@
 use std::io::{self, Write};
 
-use crate::model::{Annotation, Transcript};
+use crate::emit::locus::write_locus;
+use crate::model::{Annotation, Locus, Transcript};
 
 pub fn write_gff3<W: Write>(
     out: &mut W,
     annotation: &Annotation,
+    loci: &[Locus],
     version: &str,
     command_line: &str,
+    attrs_filter: Option<&[String]>,
+    keep_all_attrs: bool,
 ) -> io::Result<()> {
     writeln!(out, "##gff-version 3")?;
     writeln!(out, "# gffread v{version}")?;
     writeln!(out, "# {command_line}")?;
 
-    for transcript in &annotation.transcripts {
-        write_transcript(out, transcript)?;
+    if loci.is_empty() {
+        for transcript in &annotation.transcripts {
+            write_transcript(out, transcript, attrs_filter, keep_all_attrs)?;
+        }
+    } else {
+        for locus in loci {
+            write_locus(out, locus)?;
+            for transcript in annotation
+                .transcripts
+                .iter()
+                .filter(|transcript| transcript.locus.as_deref() == Some(locus.id.as_str()))
+            {
+                write_transcript(out, transcript, attrs_filter, keep_all_attrs)?;
+            }
+        }
     }
 
     Ok(())
 }
 
-fn write_transcript<W: Write>(out: &mut W, transcript: &Transcript) -> io::Result<()> {
+fn write_transcript<W: Write>(
+    out: &mut W,
+    transcript: &Transcript,
+    attrs_filter: Option<&[String]>,
+    keep_all_attrs: bool,
+) -> io::Result<()> {
     write!(
         out,
         "{}\t{}\t{}\t{}\t{}\t.\t{}\t.\tID={}",
@@ -38,6 +60,26 @@ fn write_transcript<W: Write>(out: &mut W, transcript: &Transcript) -> io::Resul
 
     if let Some(gene_name) = &transcript.gene_name {
         write!(out, ";gene_name={gene_name}")?;
+    }
+
+    if let Some(locus) = &transcript.locus {
+        write!(out, ";locus={locus}")?;
+    }
+
+    if keep_all_attrs {
+        for (attr_name, value) in &transcript.attrs {
+            if should_emit_extra_attr(attr_name) && !value.is_empty() {
+                write!(out, ";{attr_name}={value}")?;
+            }
+        }
+    } else if let Some(attrs_filter) = attrs_filter {
+        for attr_name in attrs_filter {
+            if let Some(value) = transcript.attrs.get(attr_name) {
+                if !value.is_empty() {
+                    write!(out, ";{attr_name}={value}")?;
+                }
+            }
+        }
     }
 
     writeln!(out)?;
@@ -70,4 +112,11 @@ fn write_transcript<W: Write>(out: &mut W, transcript: &Transcript) -> io::Resul
     }
 
     Ok(())
+}
+
+fn should_emit_extra_attr(name: &str) -> bool {
+    !matches!(
+        name,
+        "ID" | "Parent" | "geneID" | "gene_id" | "gene_name" | "transcript_id"
+    )
 }

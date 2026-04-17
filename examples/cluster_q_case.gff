@@ -1,0 +1,6 @@
+chr1	src	mRNA	90	300	.	+	.	ID=long;geneID=g1;gene_name=G1
+chr1	src	exon	90	150	.	+	.	Parent=long
+chr1	src	exon	200	300	.	+	.	Parent=long
+chr1	src	mRNA	100	320	.	+	.	ID=shift;geneID=g1;gene_name=G1
+chr1	src	exon	100	150	.	+	.	Parent=shift
+chr1	src	exon	200	320	.	+	.	Parent=shift

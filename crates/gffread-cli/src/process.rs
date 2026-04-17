@@ -2,11 +2,13 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
+use gffread_core::cluster::apply_clustering;
 use gffread_core::compat::CompatError;
 use gffread_core::emit::{gff3, gtf, table};
 use gffread_core::fasta::{
     load_genome, write_cds_fasta, write_protein_fasta, write_transcript_fasta,
 };
+use gffread_core::filters::apply_filters;
 use gffread_core::loader::gff::load_annotation;
 use gffread_core::options::{MainOutput, RuntimeOptions};
 use gffread_core::VERSION;
@@ -40,6 +42,8 @@ pub fn run_process(args: Vec<String>) -> i32 {
 
 fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
     let annotation = load_annotation(&options.input)?;
+    let annotation = apply_filters(&annotation, &options)?;
+    let (annotation, loci) = apply_clustering(&annotation, &options.cluster);
     let command_line = oracle_command_line(&options.original_args);
     let need_genome = options.fasta_outputs.transcript.is_some()
         || options.fasta_outputs.cds.is_some()
@@ -71,16 +75,32 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                     CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
                 })?;
 
-                gff3::write_gff3(&mut file, &annotation, VERSION, &command_line)
-                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+                gff3::write_gff3(
+                    &mut file,
+                    &annotation,
+                    &loci,
+                    VERSION,
+                    &command_line,
+                    options.attrs.as_deref(),
+                    options.keep_all_attrs,
+                )
+                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             } else if options.fasta_outputs.transcript.is_none()
                 && options.fasta_outputs.cds.is_none()
                 && options.fasta_outputs.protein.is_none()
             {
                 let stdout = io::stdout();
                 let mut handle = stdout.lock();
-                gff3::write_gff3(&mut handle, &annotation, VERSION, &command_line)
-                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+                gff3::write_gff3(
+                    &mut handle,
+                    &annotation,
+                    &loci,
+                    VERSION,
+                    &command_line,
+                    options.attrs.as_deref(),
+                    options.keep_all_attrs,
+                )
+                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             }
         }
         MainOutput::Gtf => {
@@ -242,8 +262,16 @@ mod tests {
             output: Some(output.to_path_buf()),
             main_output: MainOutput::Gff3,
             table_format: None,
+            attrs: None,
+            keep_all_attrs: false,
             genome,
             fasta_outputs,
+            range_filter: None,
+            id_filter: None,
+            min_length: None,
+            max_intron: None,
+            no_pseudo: false,
+            cluster: gffread_core::options::ClusterOptions::default(),
             input: input.to_path_buf(),
             inputs: vec![input.to_path_buf()],
             original_args: Vec::new(),
