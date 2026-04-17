@@ -97,11 +97,14 @@ gffread: $(OBJS) gffread.o
 test tests: gffread
 	@./run_tests.sh
 
+.PHONY : rust-test
+rust-test:
+	cargo test -p gffread-rs
+
 # target for removing all object files
 
 .PHONY : clean
 clean:
 	@${RM} gffread gffread.o* gffread.exe $(OBJS)
 	@${RM} core.*
-
 
