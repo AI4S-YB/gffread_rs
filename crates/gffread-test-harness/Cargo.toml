@@ -3,3 +3,7 @@ name = "gffread-test-harness"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+
+[dependencies]
+similar.workspace = true
+tempfile.workspace = true
