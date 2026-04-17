@@ -181,12 +181,19 @@ fn repo_root() -> PathBuf {
 }
 
 fn ensure_oracle_binary() -> Result<PathBuf, Box<dyn Error>> {
-    let oracle = repo_root().join("gffread");
-    if oracle.is_file() {
-        return Ok(oracle);
-    }
+    ensure_oracle_binary_with_make(&repo_root(), Path::new("make"))
+}
 
-    let status = Command::new("make").arg("-C").arg(repo_root()).status()?;
+fn ensure_oracle_binary_with_make(
+    repo_root: &Path,
+    make: &Path,
+) -> Result<PathBuf, Box<dyn Error>> {
+    let oracle = repo_root.join("gffread");
+    let status = Command::new(make)
+        .arg("-C")
+        .arg(repo_root)
+        .arg("gffread")
+        .status()?;
     if !status.success() {
         return Err("failed to build C++ oracle with make".into());
     }
@@ -306,6 +313,7 @@ fn diff_bytes(label: &str, oracle: &[u8], candidate: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn different_output_filenames_with_same_count_are_reported() {
@@ -334,6 +342,44 @@ mod tests {
             run.output_files.contains(Path::new("README.md")),
             "modified existing fixture should be reported as changed output; got {}",
             format_path_set(&run.output_files)
+        );
+    }
+
+    #[test]
+    fn ensure_oracle_binary_rebuilds_even_when_binary_exists() {
+        let tempdir = TempDir::new().expect("tempdir should be created");
+        let repo_root = tempdir.path().join("repo");
+        fs::create_dir(&repo_root).expect("repo root should be created");
+
+        fs::write(repo_root.join("gffread"), b"stale").expect("stale binary should be created");
+
+        let bin_dir = tempdir.path().join("bin");
+        fs::create_dir(&bin_dir).expect("bin dir should be created");
+        let make_path = bin_dir.join("make");
+        let mut make_script = fs::File::create(&make_path).expect("make script should be created");
+        writeln!(make_script, "#!/bin/sh\nprintf invoked > \"$2/gffread\"\n")
+            .expect("make script should be written");
+        drop(make_script);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = fs::metadata(&make_path)
+                .expect("make script metadata should exist")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&make_path, permissions).expect("make script should be executable");
+        }
+
+        let oracle = ensure_oracle_binary_with_make(&repo_root, &make_path)
+            .expect("oracle binary should be ensured");
+
+        assert_eq!(oracle, repo_root.join("gffread"));
+        assert_eq!(
+            fs::read_to_string(oracle).expect("oracle should be readable"),
+            "invoked",
+            "build helper should refresh the binary even when it already exists"
         );
     }
 }
