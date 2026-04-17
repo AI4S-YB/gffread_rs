@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
@@ -54,10 +55,7 @@ impl CompatCase {
         self
     }
 
-    pub fn assert_matches_oracle(
-        &self,
-        candidate: impl AsRef<Path>,
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn assert_matches_oracle(&self, candidate: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
         let oracle = ensure_oracle_binary()?;
         let oracle_run = self.run_command(&oracle)?;
         let candidate_run = self.run_command(candidate.as_ref())?;
@@ -87,13 +85,12 @@ impl CompatCase {
             ));
         }
 
-        if oracle_run.files.len() != candidate_run.files.len() {
-            failures.push(format!(
-                "{}: output file count differed: oracle={} candidate={}",
-                self.name,
-                oracle_run.files.len(),
-                candidate_run.files.len()
-            ));
+        if let Err(failure) = compare_output_file_sets(
+            &self.name,
+            &oracle_run.output_files,
+            &candidate_run.output_files,
+        ) {
+            failures.push(failure);
         }
 
         for expected in &self.expected_files {
@@ -137,16 +134,22 @@ impl CompatCase {
         } else {
             tempdir.path().to_path_buf()
         };
+        let files_before = capture_regular_file_paths(&workdir, &workdir)?;
 
         let output = Command::new(program)
             .args(&self.args)
             .current_dir(&workdir)
             .output()?;
+        let files_after = capture_regular_file_paths(&workdir, &workdir)?;
 
         Ok(RunResult {
             status_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
             stderr: output.stderr,
+            output_files: files_after
+                .difference(&files_before)
+                .cloned()
+                .collect::<BTreeSet<_>>(),
             files: capture_expected_files(&workdir, &self.expected_files)?,
         })
     }
@@ -156,6 +159,7 @@ struct RunResult {
     status_code: i32,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
+    output_files: BTreeSet<PathBuf>,
     files: Vec<(PathBuf, Vec<u8>)>,
 }
 
@@ -185,10 +189,7 @@ fn ensure_oracle_binary() -> Result<PathBuf, Box<dyn Error>> {
         return Ok(oracle);
     }
 
-    let status = Command::new("make")
-        .arg("-C")
-        .arg(repo_root())
-        .status()?;
+    let status = Command::new("make").arg("-C").arg(repo_root()).status()?;
     if !status.success() {
         return Err("failed to build C++ oracle with make".into());
     }
@@ -228,6 +229,56 @@ fn capture_expected_files(
     Ok(captured)
 }
 
+fn capture_regular_file_paths(
+    root: &Path,
+    dir: &Path,
+) -> Result<BTreeSet<PathBuf>, Box<dyn Error>> {
+    let mut captured = BTreeSet::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            captured.extend(capture_regular_file_paths(root, &path)?);
+        } else if file_type.is_file() {
+            captured.insert(path.strip_prefix(root)?.to_path_buf());
+        }
+    }
+    Ok(captured)
+}
+
+fn compare_output_file_sets(
+    case_name: &str,
+    oracle_files: &BTreeSet<PathBuf>,
+    candidate_files: &BTreeSet<PathBuf>,
+) -> Result<(), String> {
+    if oracle_files == candidate_files {
+        return Ok(());
+    }
+
+    let mut message = format!("{case_name}: output file set differed");
+    let _ = write!(&mut message, "\noracle: {}", format_path_set(oracle_files));
+    let _ = write!(
+        &mut message,
+        "\ncandidate: {}",
+        format_path_set(candidate_files)
+    );
+    Err(message)
+}
+
+fn format_path_set(paths: &BTreeSet<PathBuf>) -> String {
+    if paths.is_empty() {
+        return "[]".to_string();
+    }
+
+    let joined = paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{joined}]")
+}
+
 fn diff_bytes(label: &str, oracle: &[u8], candidate: &[u8]) -> String {
     let oracle_text = String::from_utf8_lossy(oracle);
     let candidate_text = String::from_utf8_lossy(candidate);
@@ -240,4 +291,22 @@ fn diff_bytes(label: &str, oracle: &[u8], candidate: &[u8]) -> String {
         diff.unified_diff().header("oracle", "candidate")
     );
     rendered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn different_output_filenames_with_same_count_are_reported() {
+        let oracle_files = BTreeSet::from([PathBuf::from("oracle.txt")]);
+        let candidate_files = BTreeSet::from([PathBuf::from("candidate.txt")]);
+
+        let failure = compare_output_file_sets("case", &oracle_files, &candidate_files)
+            .expect_err("different output filenames must fail");
+
+        assert!(failure.contains("output file set differed"));
+        assert!(failure.contains("oracle.txt"));
+        assert!(failure.contains("candidate.txt"));
+    }
 }
