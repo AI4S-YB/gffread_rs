@@ -13,3 +13,29 @@ fn expose_to_simplified_gff3_matches_oracle() {
         .assert_matches_oracle(candidate())
         .expect("simplified GFF3 output must match oracle");
 }
+
+#[test]
+fn gtf_conversion_matches_oracle() {
+    CompatCase::new("example_gtf")
+        .in_examples()
+        .args(["-T", "-o", "annotation.gtf", "annotation.gff"])
+        .expected_files(["annotation.gtf"])
+        .assert_matches_oracle(candidate())
+        .expect("GTF output must match oracle");
+}
+
+#[test]
+fn table_conversion_matches_oracle() {
+    CompatCase::new("example_table")
+        .in_examples()
+        .args([
+            "--table",
+            "@id,@chr,@start,@end,@strand,@exons,Name,gene,product",
+            "-o",
+            "annotation.tbl",
+            "annotation.gff",
+        ])
+        .expected_files(["annotation.tbl"])
+        .assert_matches_oracle(candidate())
+        .expect("table output must match oracle");
+}

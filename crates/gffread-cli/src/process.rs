@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use gffread_core::compat::CompatError;
-use gffread_core::emit::gff3;
+use gffread_core::emit::{gff3, gtf, table};
 use gffread_core::loader::gff::load_annotation;
 use gffread_core::options::{MainOutput, RuntimeOptions};
 use gffread_core::VERSION;
@@ -72,10 +72,37 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                 .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             Ok(())
         }
-        MainOutput::Gtf | MainOutput::Table => Err(CompatError::new(
-            "Error: selected output format is not implemented in this phase-one step\n",
-            1,
-        )),
+        MainOutput::Gtf => {
+            let output = options.output.ok_or_else(|| {
+                CompatError::new("Error: output file is required in phase-one GTF path\n", 1)
+            })?;
+            let mut file = File::create(&output).map_err(|_| {
+                CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
+            })?;
+
+            gtf::write_gtf(&mut file, &annotation)
+                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            Ok(())
+        }
+        MainOutput::Table => {
+            let output = options.output.ok_or_else(|| {
+                CompatError::new(
+                    "Error: output file is required in phase-one table path\n",
+                    1,
+                )
+            })?;
+            let format = options
+                .table_format
+                .as_deref()
+                .ok_or_else(|| CompatError::new("Error: --table requires a format\n", 1))?;
+            let mut file = File::create(&output).map_err(|_| {
+                CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
+            })?;
+
+            table::write_table(&mut file, &annotation, format)
+                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            Ok(())
+        }
     }
 }
 
