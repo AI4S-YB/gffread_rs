@@ -274,7 +274,6 @@ mod tests {
                 .as_nanos()
         ));
         let fai_path = example_path("genome.fa.fai");
-        let _ = fs::remove_file(&fai_path);
 
         let result = run_outputs(gff3_options(
             &fixtures.annotation,
