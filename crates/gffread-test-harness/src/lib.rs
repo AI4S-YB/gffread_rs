@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::ffi::{OsStr, OsString};
 use std::fmt::Write as _;
@@ -134,22 +134,19 @@ impl CompatCase {
         } else {
             tempdir.path().to_path_buf()
         };
-        let files_before = capture_regular_file_paths(&workdir, &workdir)?;
+        let files_before = capture_regular_files(&workdir, &workdir)?;
 
         let output = Command::new(program)
             .args(&self.args)
             .current_dir(&workdir)
             .output()?;
-        let files_after = capture_regular_file_paths(&workdir, &workdir)?;
+        let files_after = capture_regular_files(&workdir, &workdir)?;
 
         Ok(RunResult {
             status_code: output.status.code().unwrap_or(-1),
             stdout: output.stdout,
             stderr: output.stderr,
-            output_files: files_after
-                .difference(&files_before)
-                .cloned()
-                .collect::<BTreeSet<_>>(),
+            output_files: changed_regular_file_paths(&files_before, &files_after),
             files: capture_expected_files(&workdir, &self.expected_files)?,
         })
     }
@@ -229,22 +226,35 @@ fn capture_expected_files(
     Ok(captured)
 }
 
-fn capture_regular_file_paths(
+fn capture_regular_files(
     root: &Path,
     dir: &Path,
-) -> Result<BTreeSet<PathBuf>, Box<dyn Error>> {
-    let mut captured = BTreeSet::new();
+) -> Result<BTreeMap<PathBuf, Vec<u8>>, Box<dyn Error>> {
+    let mut captured = BTreeMap::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         let file_type = entry.file_type()?;
         if file_type.is_dir() {
-            captured.extend(capture_regular_file_paths(root, &path)?);
+            captured.extend(capture_regular_files(root, &path)?);
         } else if file_type.is_file() {
-            captured.insert(path.strip_prefix(root)?.to_path_buf());
+            captured.insert(path.strip_prefix(root)?.to_path_buf(), fs::read(path)?);
         }
     }
     Ok(captured)
+}
+
+fn changed_regular_file_paths(
+    before: &BTreeMap<PathBuf, Vec<u8>>,
+    after: &BTreeMap<PathBuf, Vec<u8>>,
+) -> BTreeSet<PathBuf> {
+    after
+        .iter()
+        .filter_map(|(path, after_bytes)| match before.get(path) {
+            Some(before_bytes) if before_bytes == after_bytes => None,
+            Some(_) | None => Some(path.clone()),
+        })
+        .collect()
 }
 
 fn compare_output_file_sets(
@@ -308,5 +318,22 @@ mod tests {
         assert!(failure.contains("output file set differed"));
         assert!(failure.contains("oracle.txt"));
         assert!(failure.contains("candidate.txt"));
+    }
+
+    #[test]
+    fn run_command_reports_existing_file_modified_in_place() {
+        let case = CompatCase::new("modifies existing fixture")
+            .in_examples()
+            .args(["-c", "printf modified > README.md"]);
+
+        let run = case
+            .run_command(Path::new("sh"))
+            .expect("shell command should run");
+
+        assert!(
+            run.output_files.contains(Path::new("README.md")),
+            "modified existing fixture should be reported as changed output; got {}",
+            format_path_set(&run.output_files)
+        );
     }
 }
