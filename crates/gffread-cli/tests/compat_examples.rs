@@ -15,6 +15,15 @@ fn expose_to_simplified_gff3_matches_oracle() {
 }
 
 #[test]
+fn plain_gff3_stdout_matches_oracle() {
+    CompatCase::new("example_gff3_stdout")
+        .in_examples()
+        .args(["annotation.gff"])
+        .assert_matches_oracle(candidate())
+        .expect("plain GFF3 stdout must match oracle");
+}
+
+#[test]
 fn gtf_conversion_matches_oracle() {
     CompatCase::new("example_gtf")
         .in_examples()

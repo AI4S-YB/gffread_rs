@@ -46,6 +46,15 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
 
     let annotation = load_annotation(&options.input)?;
     let command_line = oracle_command_line(&options.original_args);
+    let genome = if options.fasta_outputs.transcript.is_some() || options.fasta_outputs.cds.is_some()
+    {
+        let genome_path = options.genome.as_ref().ok_or_else(|| {
+            CompatError::new("Error: -g option is required for options -w/x/y/u/V/N/M !\n", 1)
+        })?;
+        Some(load_genome(genome_path)?)
+    } else {
+        None
+    };
 
     if options.expose_warnings {
         eprint!(
@@ -63,6 +72,13 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                 })?;
 
                 gff3::write_gff3(&mut file, &annotation, VERSION, &command_line)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            } else if options.fasta_outputs.transcript.is_none()
+                && options.fasta_outputs.cds.is_none()
+            {
+                let stdout = io::stdout();
+                let mut handle = stdout.lock();
+                gff3::write_gff3(&mut handle, &annotation, VERSION, &command_line)
                     .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             }
         }
@@ -98,10 +114,9 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
     }
 
     if options.fasta_outputs.transcript.is_some() || options.fasta_outputs.cds.is_some() {
-        let genome_path = options.genome.as_ref().ok_or_else(|| {
-            CompatError::new("Error: -g option is required for options -w/x/y/u/V/N/M !\n", 1)
-        })?;
-        let genome = load_genome(genome_path)?;
+        let genome = genome
+            .as_ref()
+            .expect("genome must be loaded before FASTA outputs are written");
 
         if let Some(path) = &options.fasta_outputs.transcript {
             let mut file = File::create(path).map_err(|_| {
@@ -299,5 +314,34 @@ mod tests {
         let _ = fs::remove_file(output);
         let _ = fs::remove_file(transcript_fasta);
         let _ = fs::remove_file(cds_fasta);
+    }
+
+    #[test]
+    fn invalid_genome_path_with_main_output_and_transcript_fasta_does_not_create_main_output() {
+        let fixtures = copied_example_fixtures("missing_genome_with_main_output");
+        let output = temp_output_path("missing_genome_with_main_output");
+        let transcript_fasta = fixtures.root.join("transcripts.fa");
+        let missing_genome = fixtures.root.join("missing.fa");
+
+        let result = run_outputs(gff3_options(
+            &fixtures.annotation,
+            &output,
+            FastaOutputs {
+                transcript: Some(transcript_fasta.clone()),
+                ..FastaOutputs::default()
+            },
+            Some(missing_genome),
+        ));
+
+        let err = result.expect_err("missing genome should fail");
+        assert_eq!(err.exit_code, 1);
+        assert!(
+            !output.exists(),
+            "main output file must not be created before FASTA prerequisites are validated"
+        );
+        assert!(
+            !transcript_fasta.exists(),
+            "transcript FASTA should not be created when genome loading fails"
+        );
     }
 }
