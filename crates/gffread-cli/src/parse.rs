@@ -28,7 +28,7 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
     let mut fasta_outputs = FastaOutputs::default();
     let mut sort_alpha = false;
     let mut sort_by = None::<String>;
-    let mut input = None::<PathBuf>;
+    let mut inputs = Vec::<PathBuf>::new();
 
     let mut i = 0;
     while i < args.len() {
@@ -93,7 +93,7 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                     1,
                 ));
             }
-            value => input = Some(PathBuf::from(value)),
+            value => inputs.push(PathBuf::from(value)),
         }
 
         i += 1;
@@ -117,17 +117,23 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
         ));
     }
 
-    let input = match input {
-        Some(input) => input,
-        None => return Ok(CommandMode::Help),
-    };
+    if inputs.is_empty() {
+        return Ok(CommandMode::Help);
+    }
 
-    File::open(&input).map_err(|_| {
-        CompatError::new(
-            format!("Error: cannot open input file {}!\n", input.display()),
-            1,
-        )
-    })?;
+    for input in &inputs {
+        File::open(input).map_err(|_| {
+            CompatError::new(
+                format!("Error: cannot open input file {}!\n", input.display()),
+                1,
+            )
+        })?;
+    }
+
+    let input = inputs
+        .first()
+        .cloned()
+        .expect("inputs must be non-empty after validation");
 
     Ok(CommandMode::Run(RuntimeOptions {
         expose_warnings,
@@ -137,6 +143,48 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
         genome,
         fasta_outputs,
         input,
+        inputs,
         original_args: args,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{parse_args, CommandMode};
+    use gffread_core::options::MainOutput;
+
+    fn example_path(name: &str) -> String {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("examples")
+            .join(name)
+            .display()
+            .to_string()
+    }
+
+    #[test]
+    fn preserves_first_positional_input_as_primary() {
+        let first_input = example_path("annotation.gff");
+        let second_input = example_path("annotation.gtf");
+        let args = vec![first_input.clone(), second_input.clone()];
+
+        let mode = parse_args(args.clone()).expect("ordered positional inputs should parse");
+
+        match mode {
+            CommandMode::Run(options) => {
+                assert_eq!(options.input, PathBuf::from(first_input.clone()));
+                assert_eq!(
+                    options.inputs,
+                    vec![PathBuf::from(first_input), PathBuf::from(second_input)]
+                );
+                assert_eq!(options.main_output, MainOutput::Gff3);
+                assert_eq!(options.output, None);
+                assert_eq!(options.original_args, args);
+            }
+            other => panic!("expected run mode, got {other:?}"),
+        }
+    }
 }

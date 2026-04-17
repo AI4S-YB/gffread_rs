@@ -46,3 +46,12 @@ fn missing_input_file_matches_oracle() {
         .assert_matches_oracle(candidate())
         .expect("missing input error must match oracle");
 }
+
+#[test]
+fn first_missing_positional_input_matches_oracle() {
+    CompatCase::new("first_missing_positional_input")
+        .in_examples()
+        .args(["does-not-exist.gff", "annotation.gff"])
+        .assert_matches_oracle(candidate())
+        .expect("first missing positional input must match oracle");
+}

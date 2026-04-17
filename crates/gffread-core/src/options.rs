@@ -24,5 +24,6 @@ pub struct RuntimeOptions {
     pub genome: Option<PathBuf>,
     pub fasta_outputs: FastaOutputs,
     pub input: PathBuf,
+    pub inputs: Vec<PathBuf>,
     pub original_args: Vec<String>,
 }
