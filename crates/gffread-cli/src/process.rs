@@ -26,6 +26,12 @@ pub fn run_process(args: Vec<String>) -> i32 {
             let _ = io::stderr().write_all(USAGE.as_bytes());
             1
         }
+        Ok(CommandMode::UsageError(err)) => {
+            let _ = io::stderr().write_all(USAGE.as_bytes());
+            let _ = io::stderr().write_all(b"\n");
+            let _ = io::stderr().write_all(err.message.as_bytes());
+            err.exit_code
+        }
         Ok(CommandMode::Run(options)) => match run_outputs(options) {
             Ok(()) => 0,
             Err(err) => {
@@ -270,6 +276,9 @@ mod tests {
             id_filter: None,
             min_length: None,
             max_intron: None,
+            coding_only: false,
+            noncoding_only: false,
+            multi_exon_only: false,
             no_pseudo: false,
             cluster: gffread_core::options::ClusterOptions::default(),
             input: input.to_path_buf(),
