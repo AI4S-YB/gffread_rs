@@ -10,9 +10,13 @@ pub enum MainOutput {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FastaOutputs {
     pub transcript: Option<PathBuf>,
+    pub unspliced: Option<PathBuf>,
     pub cds: Option<PathBuf>,
     pub protein: Option<PathBuf>,
     pub write_exon_segments: bool,
+    pub suppress_transcript_cds: bool,
+    pub write_protein_star_stop: bool,
+    pub padding: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

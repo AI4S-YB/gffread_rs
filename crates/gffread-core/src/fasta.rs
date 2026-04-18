@@ -84,11 +84,27 @@ pub fn write_transcript_fasta<W: Write>(
     out: &mut W,
     annotation: &Annotation,
     genome: &Genome,
+    padding: u64,
+    suppress_cds: bool,
 ) -> Result<(), CompatError> {
     for transcript in &annotation.transcripts {
-        let seq = spliced_sequence(transcript, &transcript.exons, genome)?;
-        let defline = transcript_defline(transcript);
+        let seq = spliced_sequence_with_padding(transcript, &transcript.exons, genome, padding)?;
+        let defline = transcript_defline(transcript, genome, padding, suppress_cds)?;
         write_fasta_record(out, &defline, &seq, false)
+            .map_err(|err| CompatError::new(format!("Error writing FASTA: {err}\n"), 1))?;
+    }
+    Ok(())
+}
+
+pub fn write_unspliced_fasta<W: Write>(
+    out: &mut W,
+    annotation: &Annotation,
+    genome: &Genome,
+    padding: u64,
+) -> Result<(), CompatError> {
+    for transcript in &annotation.transcripts {
+        let seq = unspliced_sequence(transcript, genome, padding)?;
+        write_fasta_record(out, &transcript.id, &seq, false)
             .map_err(|err| CompatError::new(format!("Error writing FASTA: {err}\n"), 1))?;
     }
     Ok(())
@@ -121,6 +137,7 @@ pub fn write_protein_fasta<W: Write>(
     out: &mut W,
     annotation: &Annotation,
     genome: &Genome,
+    use_star_stop: bool,
 ) -> Result<(), CompatError> {
     for transcript in &annotation.transcripts {
         if transcript.cds.is_empty() {
@@ -133,7 +150,7 @@ pub fn write_protein_fasta<W: Write>(
             continue;
         }
 
-        write_fasta_record(out, &transcript.id, protein.as_bytes(), false)
+        write_fasta_record(out, &transcript.id, protein.as_bytes(), use_star_stop)
             .map_err(|err| CompatError::new(format!("Error writing FASTA: {err}\n"), 1))?;
     }
     Ok(())
@@ -143,6 +160,15 @@ pub fn spliced_sequence(
     transcript: &Transcript,
     segments: &[Segment],
     genome: &Genome,
+) -> Result<Vec<u8>, CompatError> {
+    spliced_sequence_with_padding(transcript, segments, genome, 0)
+}
+
+pub fn spliced_sequence_with_padding(
+    transcript: &Transcript,
+    segments: &[Segment],
+    genome: &Genome,
+    padding: u64,
 ) -> Result<Vec<u8>, CompatError> {
     let chrom = genome.get(&transcript.seqid).ok_or_else(|| {
         CompatError::new(
@@ -155,7 +181,15 @@ pub fn spliced_sequence(
     })?;
 
     let mut seq = Vec::new();
-    for segment in segments {
+    let mut padded_segments = segments.iter().cloned().collect::<Vec<_>>();
+    if padding > 0 && !padded_segments.is_empty() {
+        let last_index = padded_segments.len() - 1;
+        padded_segments[0].start = padded_segments[0].start.saturating_sub(padding);
+        padded_segments[last_index].end =
+            (padded_segments[last_index].end + padding).min(chrom.len() as u64);
+    }
+
+    for segment in &padded_segments {
         let start = segment.start.saturating_sub(1) as usize;
         let end = segment.end as usize;
         if start >= end || end > chrom.len() {
@@ -171,6 +205,30 @@ pub fn spliced_sequence(
         reverse_complement(&mut seq);
     }
 
+    Ok(seq)
+}
+
+pub fn unspliced_sequence(
+    transcript: &Transcript,
+    genome: &Genome,
+    padding: u64,
+) -> Result<Vec<u8>, CompatError> {
+    let chrom = genome.get(&transcript.seqid).ok_or_else(|| {
+        CompatError::new(
+            format!(
+                "Error: couldn't find genomic sequence {}\n",
+                transcript.seqid
+            ),
+            1,
+        )
+    })?;
+
+    let start = transcript.start.saturating_sub(padding).max(1);
+    let end = (transcript.end + padding).min(chrom.len() as u64);
+    let mut seq = chrom[(start - 1) as usize..end as usize].to_vec();
+    if transcript.strand == '-' {
+        reverse_complement(&mut seq);
+    }
     Ok(seq)
 }
 
@@ -202,10 +260,27 @@ pub fn translate(cds: &[u8]) -> String {
     protein
 }
 
-fn transcript_defline(transcript: &Transcript) -> String {
+fn transcript_defline(
+    transcript: &Transcript,
+    genome: &Genome,
+    padding: u64,
+    suppress_cds: bool,
+) -> Result<String, CompatError> {
+    if suppress_cds {
+        return Ok(transcript.id.clone());
+    }
+
     match projected_cds_span(transcript) {
-        Some((start, end)) => format!("{} CDS={start}-{end}", transcript.id),
-        None => transcript.id.clone(),
+        Some((start, end)) => {
+            let prefix_padding = transcript_prefix_padding(transcript, genome, padding)?;
+            Ok(format!(
+                "{} CDS={}-{}",
+                transcript.id,
+                start + prefix_padding,
+                end + prefix_padding
+            ))
+        }
+        None => Ok(transcript.id.clone()),
     }
 }
 
@@ -227,6 +302,35 @@ fn projected_defline(transcript: &Transcript, segments: &[Segment]) -> String {
         "{} loc:{}({}){}-{} segs:{}",
         transcript.id, transcript.seqid, transcript.strand, transcript.start, transcript.end, parts
     )
+}
+
+fn transcript_prefix_padding(
+    transcript: &Transcript,
+    genome: &Genome,
+    padding: u64,
+) -> Result<u64, CompatError> {
+    if padding == 0 {
+        return Ok(0);
+    }
+
+    let chrom = genome.get(&transcript.seqid).ok_or_else(|| {
+        CompatError::new(
+            format!(
+                "Error: couldn't find genomic sequence {}\n",
+                transcript.seqid
+            ),
+            1,
+        )
+    })?;
+
+    let chrom_len = chrom.len() as u64;
+    let prefix = if transcript.strand == '-' {
+        chrom_len.saturating_sub(transcript.end)
+    } else {
+        transcript.start.saturating_sub(1)
+    };
+
+    Ok(prefix.min(padding))
 }
 
 pub fn write_fasta_record<W: Write>(
