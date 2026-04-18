@@ -3,59 +3,41 @@ use std::io::{self, Write};
 use crate::emit::locus::write_locus;
 use crate::model::{Annotation, Attrs, Gene, Locus, Segment, Transcript};
 
+pub struct Gff3Options<'a> {
+    pub version: &'a str,
+    pub command_line: &'a str,
+    pub track_label: Option<&'a str>,
+    pub attrs_filter: Option<&'a [String]>,
+    pub keep_all_attrs: bool,
+    pub gather_exon_attrs: bool,
+    pub keep_exon_attrs: bool,
+    pub keep_genes: bool,
+    pub keep_comments: bool,
+    pub decode_attrs: bool,
+}
+
 pub fn write_gff3<W: Write>(
     out: &mut W,
     annotation: &Annotation,
     loci: &[Locus],
-    version: &str,
-    command_line: &str,
-    track_label: Option<&str>,
-    attrs_filter: Option<&[String]>,
-    keep_all_attrs: bool,
-    gather_exon_attrs: bool,
-    keep_exon_attrs: bool,
-    keep_genes: bool,
-    keep_comments: bool,
-    decode_attrs: bool,
+    options: &Gff3Options<'_>,
 ) -> io::Result<()> {
-    if keep_comments {
+    if options.keep_comments {
         for comment in &annotation.header_comments {
             writeln!(out, "{comment}")?;
         }
     } else {
         writeln!(out, "##gff-version 3")?;
-        writeln!(out, "# gffread v{version}")?;
-        writeln!(out, "# {command_line}")?;
+        writeln!(out, "# gffread v{}", options.version)?;
+        writeln!(out, "# {}", options.command_line)?;
     }
 
     if loci.is_empty() {
-        write_records(
-            out,
-            annotation,
-            None,
-            track_label,
-            attrs_filter,
-            keep_all_attrs,
-            gather_exon_attrs,
-            keep_exon_attrs,
-            keep_genes,
-            decode_attrs,
-        )?;
+        write_records(out, annotation, None, options)?;
     } else {
         for locus in loci {
             write_locus(out, locus)?;
-            write_records(
-                out,
-                annotation,
-                Some(locus.id.as_str()),
-                track_label,
-                attrs_filter,
-                keep_all_attrs,
-                gather_exon_attrs,
-                keep_exon_attrs,
-                keep_genes,
-                decode_attrs,
-            )?;
+            write_records(out, annotation, Some(locus.id.as_str()), options)?;
         }
     }
 
@@ -66,13 +48,7 @@ fn write_records<W: Write>(
     out: &mut W,
     annotation: &Annotation,
     locus_id: Option<&str>,
-    track_label: Option<&str>,
-    attrs_filter: Option<&[String]>,
-    keep_all_attrs: bool,
-    gather_exon_attrs: bool,
-    keep_exon_attrs: bool,
-    keep_genes: bool,
-    decode_attrs: bool,
+    options: &Gff3Options<'_>,
 ) -> io::Result<()> {
     let transcripts = annotation
         .transcripts
@@ -81,27 +57,23 @@ fn write_records<W: Write>(
 
     let mut emitted_genes = Vec::<String>::new();
     for transcript in transcripts {
-        if keep_genes {
+        if options.keep_genes {
             if let Some(gene_id) = transcript.gene_id.as_deref() {
                 if !emitted_genes.iter().any(|id| id == gene_id) {
                     if let Some(gene) = annotation.genes.iter().find(|gene| gene.id == gene_id) {
-                        write_gene(out, gene, track_label, keep_all_attrs, decode_attrs)?;
+                        write_gene(
+                            out,
+                            gene,
+                            options.track_label,
+                            options.keep_all_attrs,
+                            options.decode_attrs,
+                        )?;
                         emitted_genes.push(gene_id.to_owned());
                     }
                 }
             }
         }
-        write_transcript(
-            out,
-            transcript,
-            track_label,
-            attrs_filter,
-            keep_all_attrs,
-            gather_exon_attrs,
-            keep_exon_attrs,
-            keep_genes,
-            decode_attrs,
-        )?;
+        write_transcript(out, transcript, options)?;
     }
 
     Ok(())
@@ -110,20 +82,14 @@ fn write_records<W: Write>(
 fn write_transcript<W: Write>(
     out: &mut W,
     transcript: &Transcript,
-    track_label: Option<&str>,
-    attrs_filter: Option<&[String]>,
-    keep_all_attrs: bool,
-    gather_exon_attrs: bool,
-    keep_exon_attrs: bool,
-    keep_genes: bool,
-    decode_attrs: bool,
+    options: &Gff3Options<'_>,
 ) -> io::Result<()> {
-    let source = track_label.unwrap_or(&transcript.source);
+    let source = options.track_label.unwrap_or(&transcript.source);
     let transcript_attrs = merged_transcript_attrs(
         transcript,
-        keep_all_attrs,
-        gather_exon_attrs,
-        keep_exon_attrs,
+        options.keep_all_attrs,
+        options.gather_exon_attrs,
+        options.keep_exon_attrs,
     );
     write!(
         out,
@@ -138,37 +104,45 @@ fn write_transcript<W: Write>(
     )?;
 
     if let Some(gene_id) = &transcript.gene_id {
-        if keep_genes {
-            write!(out, ";Parent={}", attr_value(gene_id, decode_attrs))?;
+        if options.keep_genes {
+            write!(out, ";Parent={}", attr_value(gene_id, options.decode_attrs))?;
         } else {
-            write!(out, ";geneID={}", attr_value(gene_id, decode_attrs))?;
+            write!(out, ";geneID={}", attr_value(gene_id, options.decode_attrs))?;
         }
     }
 
     if let Some(gene_name) = &transcript.gene_name {
-        write!(out, ";gene_name={}", attr_value(gene_name, decode_attrs))?;
+        write!(
+            out,
+            ";gene_name={}",
+            attr_value(gene_name, options.decode_attrs)
+        )?;
     }
 
     if let Some(locus) = &transcript.locus {
         write!(out, ";locus={locus}")?;
     }
 
-    if keep_all_attrs {
+    if options.keep_all_attrs {
         for attr in transcript_attrs.iter() {
             if should_emit_extra_attr(&attr.key) && !attr.value.is_empty() {
                 write!(
                     out,
                     ";{}={}",
                     attr.key,
-                    attr_value(&attr.value, decode_attrs)
+                    attr_value(&attr.value, options.decode_attrs)
                 )?;
             }
         }
-    } else if let Some(attrs_filter) = attrs_filter {
+    } else if let Some(attrs_filter) = options.attrs_filter {
         for attr_name in attrs_filter {
             if let Some(value) = transcript_attrs.get(attr_name) {
                 if !value.is_empty() {
-                    write!(out, ";{attr_name}={}", attr_value(value, decode_attrs))?;
+                    write!(
+                        out,
+                        ";{attr_name}={}",
+                        attr_value(value, options.decode_attrs)
+                    )?;
                 }
             }
         }
@@ -184,10 +158,7 @@ fn write_transcript<W: Write>(
             exon,
             &transcript.exons,
             "exon",
-            keep_all_attrs,
-            gather_exon_attrs,
-            keep_exon_attrs,
-            decode_attrs,
+            options,
         )?;
     }
 
@@ -199,10 +170,7 @@ fn write_transcript<W: Write>(
             cds,
             &transcript.cds,
             "CDS",
-            keep_all_attrs,
-            gather_exon_attrs,
-            keep_exon_attrs,
-            decode_attrs,
+            options,
         )?;
     }
 
@@ -216,10 +184,7 @@ fn write_segment<W: Write>(
     segment: &Segment,
     sibling_segments: &[Segment],
     feature: &str,
-    keep_all_attrs: bool,
-    gather_exon_attrs: bool,
-    keep_exon_attrs: bool,
-    decode_attrs: bool,
+    options: &Gff3Options<'_>,
 ) -> io::Result<()> {
     let phase = if feature == "CDS" {
         segment.phase.as_str()
@@ -244,14 +209,14 @@ fn write_segment<W: Write>(
         phase,
         transcript.id
     )?;
-    if keep_all_attrs {
+    if options.keep_all_attrs {
         for attr in segment.attrs.iter() {
-            if !keep_exon_attrs
+            if !options.keep_exon_attrs
                 && should_skip_segment_attr(
                     attr.key.as_str(),
                     attr.value.as_str(),
                     sibling_segments,
-                    gather_exon_attrs,
+                    options.gather_exon_attrs,
                 )
             {
                 continue;
@@ -261,7 +226,7 @@ fn write_segment<W: Write>(
                     out,
                     ";{}={}",
                     attr.key,
-                    attr_value(&attr.value, decode_attrs)
+                    attr_value(&attr.value, options.decode_attrs)
                 )?;
             }
         }

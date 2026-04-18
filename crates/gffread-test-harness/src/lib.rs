@@ -168,14 +168,16 @@ struct RunResult {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     output_files: BTreeSet<PathBuf>,
-    files: Vec<(PathBuf, Vec<u8>)>,
+    files: CapturedFiles,
 }
+
+type CapturedFiles = Vec<(PathBuf, Vec<u8>)>;
 
 trait FileMapExt {
     fn get(&self, path: &Path) -> Option<&Vec<u8>>;
 }
 
-impl FileMapExt for Vec<(PathBuf, Vec<u8>)> {
+impl FileMapExt for CapturedFiles {
     fn get(&self, path: &Path) -> Option<&Vec<u8>> {
         self.iter()
             .find(|(candidate, _)| candidate == path)
@@ -253,7 +255,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn Error>> {
 fn capture_expected_files(
     workdir: &Path,
     expected_files: &[PathBuf],
-) -> Result<Vec<(PathBuf, Vec<u8>)>, Box<dyn Error>> {
+) -> Result<CapturedFiles, Box<dyn Error>> {
     let mut captured = Vec::with_capacity(expected_files.len());
     for path in expected_files {
         let full_path = workdir.join(path);

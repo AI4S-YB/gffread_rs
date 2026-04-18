@@ -257,7 +257,7 @@ pub fn spliced_sequence_with_padding(
     padding: u64,
 ) -> Result<Vec<u8>, CompatError> {
     let chrom_len = chrom_len(genome, &transcript.seqid)?;
-    let mut padded_segments = segments.iter().cloned().collect::<Vec<_>>();
+    let mut padded_segments = segments.to_vec();
     if padding > 0 && !padded_segments.is_empty() {
         let last_index = padded_segments.len() - 1;
         padded_segments[0].start = padded_segments[0].start.saturating_sub(padding);
@@ -850,7 +850,7 @@ fn write_fasta_index(path: &Path, entries: &[FastaIndexEntry]) -> Result<(), Com
     })?;
 
     if !existed {
-        eprint!("FASTA index file {} created.\n", fai_path.display());
+        eprintln!("FASTA index file {} created.", fai_path.display());
     }
 
     Ok(())
@@ -971,10 +971,7 @@ fn trimmed_segment_bounds(
     }
 }
 
-fn projected_cds_segments<'a>(
-    transcript: &Transcript,
-    segments: &'a [Segment],
-) -> Option<Vec<Segment>> {
+fn projected_cds_segments(transcript: &Transcript, segments: &[Segment]) -> Option<Vec<Segment>> {
     let mut projected = segments
         .iter()
         .enumerate()

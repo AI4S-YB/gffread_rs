@@ -15,7 +15,7 @@ pub enum TableField {
 
 pub fn parse_format(format: &str) -> Vec<TableField> {
     format
-        .split(|ch| matches!(ch, ',' | ';' | ':' | ' '))
+        .split([',', ';', ':', ' '])
         .filter(|part| !part.is_empty())
         .map(|part| match part {
             "@id" | "ID" | "transcript_id" => TableField::Id,

@@ -49,17 +49,12 @@ pub enum RefSortOrder {
     List(PathBuf),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum InputFormat {
+    #[default]
     Auto,
     Bed,
     Tlf,
-}
-
-impl Default for InputFormat {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

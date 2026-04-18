@@ -23,7 +23,7 @@ use crate::parse::{parse_args, CommandMode};
 pub fn run_process(program: String, args: Vec<String>) -> i32 {
     match parse_args(program, args) {
         Ok(CommandMode::Version) => {
-            print!("{VERSION}\n");
+            println!("{VERSION}");
             0
         }
         Ok(CommandMode::Help) => {
@@ -38,7 +38,7 @@ pub fn run_process(program: String, args: Vec<String>) -> i32 {
             let _ = io::stderr().write_all(err.message.as_bytes());
             err.exit_code
         }
-        Ok(CommandMode::Run(options)) => match run_outputs(options) {
+        Ok(CommandMode::Run(options)) => match run_outputs(*options) {
             Ok(()) => 0,
             Err(err) => {
                 let _ = io::stderr().write_all(err.message.as_bytes());
@@ -129,27 +129,26 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
 
     match options.main_output {
         MainOutput::Gff3 => {
+            let gff3_options = gff3::Gff3Options {
+                version: VERSION,
+                command_line: &command_line,
+                track_label: options.track_label.as_deref(),
+                attrs_filter: options.attrs.as_deref(),
+                keep_all_attrs: options.keep_all_attrs,
+                gather_exon_attrs: options.gather_exon_attrs,
+                keep_exon_attrs: options.keep_exon_attrs,
+                keep_genes: options.keep_genes,
+                keep_comments: options.keep_comments,
+                decode_attrs: options.decode_attrs,
+            };
+
             if let Some(output) = &options.output {
                 let mut file = File::create(output).map_err(|_| {
                     CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
                 })?;
 
-                gff3::write_gff3(
-                    &mut file,
-                    &annotation,
-                    &loci,
-                    VERSION,
-                    &command_line,
-                    options.track_label.as_deref(),
-                    options.attrs.as_deref(),
-                    options.keep_all_attrs,
-                    options.gather_exon_attrs,
-                    options.keep_exon_attrs,
-                    options.keep_genes,
-                    options.keep_comments,
-                    options.decode_attrs,
-                )
-                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+                gff3::write_gff3(&mut file, &annotation, &loci, &gff3_options)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             } else if options.fasta_outputs.transcript.is_none()
                 && options.fasta_outputs.unspliced.is_none()
                 && options.fasta_outputs.cds.is_none()
@@ -157,22 +156,8 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
             {
                 let stdout = io::stdout();
                 let mut handle = stdout.lock();
-                gff3::write_gff3(
-                    &mut handle,
-                    &annotation,
-                    &loci,
-                    VERSION,
-                    &command_line,
-                    options.track_label.as_deref(),
-                    options.attrs.as_deref(),
-                    options.keep_all_attrs,
-                    options.gather_exon_attrs,
-                    options.keep_exon_attrs,
-                    options.keep_genes,
-                    options.keep_comments,
-                    options.decode_attrs,
-                )
-                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+                gff3::write_gff3(&mut handle, &annotation, &loci, &gff3_options)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             }
         }
         MainOutput::Gtf => {
@@ -330,6 +315,7 @@ fn write_fasta_outputs(
 mod tests {
     use std::fs;
     use std::path::Path;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::run_outputs;

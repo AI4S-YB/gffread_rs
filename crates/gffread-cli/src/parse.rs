@@ -12,7 +12,7 @@ pub enum CommandMode {
     Version,
     Help,
     UsageError(CompatError),
-    Run(RuntimeOptions),
+    Run(Box<RuntimeOptions>),
 }
 
 pub fn parse_args(program: String, args: Vec<String>) -> Result<CommandMode, CompatError> {
@@ -302,7 +302,7 @@ pub fn parse_args(program: String, args: Vec<String>) -> Result<CommandMode, Com
         .cloned()
         .expect("inputs must be non-empty after validation");
 
-    Ok(CommandMode::Run(RuntimeOptions {
+    Ok(CommandMode::Run(Box::new(RuntimeOptions {
         program,
         expose_warnings,
         output,
@@ -338,7 +338,7 @@ pub fn parse_args(program: String, args: Vec<String>) -> Result<CommandMode, Com
         input,
         inputs,
         original_args: args,
-    }))
+    })))
 }
 
 fn parse_u64_arg(value: &str, option: &str) -> Result<u64, CompatError> {
