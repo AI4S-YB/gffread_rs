@@ -31,14 +31,23 @@ jobs:
         run: cargo build --workspace --verbose
 
       - name: Run Rust-only tests
-        run: cargo test -p gffread-core --verbose
+        run: |
+          cargo test -p gffread-core --verbose
+          cargo test -p gffread-test-harness --verbose
 
       - name: Run CLI smoke tests
-        run: cargo test -p gffread-rs --test compat_cli --verbose
+        run: cargo test -p gffread-rs --test version_smoke --verbose
+
+      - name: Prepare C++ oracle
+        if: runner.os != 'Windows'
+        run: |
+          git clone --depth 1 https://github.com/gpertea/gclib.git .worktrees/gclib
+          make GCLDIR="$PWD/.worktrees/gclib" gffread
 
       - name: Run oracle compatibility tests
         if: runner.os != 'Windows'
         run: |
-          make gffread
+          cargo test -p gffread-rs --test version_oracle --verbose
+          cargo test -p gffread-rs --test compat_cli --verbose
           cargo test -p gffread-rs --test compat_examples --verbose
           cargo test -p gffread-rs --test compat_fasta_options --verbose
