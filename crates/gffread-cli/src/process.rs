@@ -7,6 +7,7 @@ use gffread_core::compat::CompatError;
 use gffread_core::emit::{gff3, gtf, table};
 use gffread_core::fasta::{
     load_genome, write_cds_fasta, write_protein_fasta, write_transcript_fasta,
+    write_unspliced_fasta,
 };
 use gffread_core::filters::apply_filters;
 use gffread_core::loader::gff::load_annotation;
@@ -52,6 +53,7 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
     let (annotation, loci) = apply_clustering(&annotation, &options.cluster);
     let command_line = oracle_command_line(&options.original_args);
     let need_genome = options.fasta_outputs.transcript.is_some()
+        || options.fasta_outputs.unspliced.is_some()
         || options.fasta_outputs.cds.is_some()
         || options.fasta_outputs.protein.is_some();
     let genome = if need_genome {
@@ -92,6 +94,7 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                 )
                 .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             } else if options.fasta_outputs.transcript.is_none()
+                && options.fasta_outputs.unspliced.is_none()
                 && options.fasta_outputs.cds.is_none()
                 && options.fasta_outputs.protein.is_none()
             {
@@ -149,7 +152,25 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
             let mut file = File::create(path).map_err(|_| {
                 CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
             })?;
-            write_transcript_fasta(&mut file, &annotation, &genome)?;
+            write_transcript_fasta(
+                &mut file,
+                &annotation,
+                genome,
+                options.fasta_outputs.padding,
+                options.fasta_outputs.suppress_transcript_cds,
+            )?;
+        }
+
+        if let Some(path) = &options.fasta_outputs.unspliced {
+            let mut file = File::create(path).map_err(|_| {
+                CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
+            })?;
+            write_unspliced_fasta(
+                &mut file,
+                &annotation,
+                genome,
+                options.fasta_outputs.padding,
+            )?;
         }
 
         if let Some(path) = &options.fasta_outputs.cds {
@@ -168,7 +189,12 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
             let mut file = File::create(path).map_err(|_| {
                 CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
             })?;
-            write_protein_fasta(&mut file, &annotation, genome)?;
+            write_protein_fasta(
+                &mut file,
+                &annotation,
+                genome,
+                options.fasta_outputs.write_protein_star_stop,
+            )?;
         }
     }
 
@@ -292,7 +318,7 @@ mod tests {
         let fixtures = copied_example_fixtures("protein_fasta");
         let output = temp_output_path("protein_fasta");
         let protein_fasta = fixtures.root.join("transcripts_prot.fa");
-        let fai_path = example_path("genome.fa.fai");
+        let fai_path = fixtures.root.join("genome.fa.fai");
 
         let result = run_outputs(gff3_options(
             &fixtures.annotation,
@@ -308,8 +334,8 @@ mod tests {
         assert!(output.exists(), "GFF3 output should still be written");
         assert!(protein_fasta.exists(), "protein FASTA should be written");
         assert!(
-            !fai_path.exists(),
-            "process tests must not create FASTA indices in tracked examples"
+            fai_path.exists(),
+            "temporary genome FASTA index should be written"
         );
 
         let _ = fs::remove_file(output);
@@ -336,7 +362,7 @@ mod tests {
                 .expect("system clock should be after Unix epoch")
                 .as_nanos()
         ));
-        let fai_path = example_path("genome.fa.fai");
+        let fai_path = fixtures.root.join("genome.fa.fai");
 
         let result = run_outputs(gff3_options(
             &fixtures.annotation,
@@ -358,8 +384,8 @@ mod tests {
         );
         assert!(cds_fasta.exists(), "CDS FASTA should be written");
         assert!(
-            !fai_path.exists(),
-            "process tests must not create FASTA indices in tracked examples"
+            fai_path.exists(),
+            "temporary genome FASTA index should be written"
         );
 
         let _ = fs::remove_file(output);

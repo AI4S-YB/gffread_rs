@@ -110,6 +110,13 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 })?;
                 fasta_outputs.transcript = Some(PathBuf::from(value));
             }
+            "-u" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option -u requires an argument\n", 1)
+                })?;
+                fasta_outputs.unspliced = Some(PathBuf::from(value));
+            }
             "-x" => {
                 i += 1;
                 let value = args.get(i).ok_or_else(|| {
@@ -124,6 +131,7 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 })?;
                 fasta_outputs.protein = Some(PathBuf::from(value));
             }
+            "-S" => fasta_outputs.write_protein_star_stop = true,
             "--table" => {
                 i += 1;
                 let value = args.get(i).ok_or_else(|| {
@@ -170,6 +178,14 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 no_pseudo = true;
                 keep_all_attrs = true;
             }
+            "--w-nocds" => fasta_outputs.suppress_transcript_cds = true,
+            "--w-add" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option --w-add requires an argument\n", 1)
+                })?;
+                fasta_outputs.padding = parse_u64_arg(value, "--w-add")?;
+            }
             "--add-hasCDS" => {
                 return Ok(CommandMode::UsageError(CompatError::new(
                     "Error: invalid argument '--add-hasCDS'\n",
@@ -213,11 +229,22 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
 
     if genome.is_none()
         && (fasta_outputs.transcript.is_some()
+            || fasta_outputs.unspliced.is_some()
             || fasta_outputs.cds.is_some()
             || fasta_outputs.protein.is_some())
     {
         return Err(CompatError::new(
             "Error: -g option is required for options -w/x/y/u/V/N/M !\n",
+            1,
+        ));
+    }
+
+    if fasta_outputs.padding > 0
+        && fasta_outputs.transcript.is_none()
+        && fasta_outputs.unspliced.is_none()
+    {
+        return Err(CompatError::new(
+            "Error: --w-add option requires -w or -u option!\n",
             1,
         ));
     }

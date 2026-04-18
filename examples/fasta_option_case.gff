@@ -1,0 +1,5 @@
+chr1	src	mRNA	5	23	.	+	.	ID=tx1;geneID=g1;gene_name=G1
+chr1	src	exon	5	10	.	+	.	Parent=tx1
+chr1	src	exon	15	23	.	+	.	Parent=tx1
+chr1	src	CDS	5	10	.	+	0	Parent=tx1
+chr1	src	CDS	15	23	.	+	0	Parent=tx1
