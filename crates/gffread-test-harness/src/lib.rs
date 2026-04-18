@@ -350,12 +350,13 @@ mod tests {
     #[cfg(not(windows))]
     const REBUILD_MOCK_MAKE: &str = "#!/bin/sh\nprintf invoked > \"$2/gffread\"\n";
     #[cfg(windows)]
-    const REBUILD_MOCK_MAKE: &str = "@echo off\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\n";
+    const REBUILD_MOCK_MAKE: &str =
+        "@echo off\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\nexit /b 0\r\n";
 
     #[cfg(not(windows))]
     const GCLDIR_MOCK_MAKE: &str = "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    GCLDIR=*) printf '%s' \"${arg#GCLDIR=}\" > \"$2/gcldir.txt\" ;;\n  esac\ndone\nprintf invoked > \"$2/gffread\"\n";
     #[cfg(windows)]
-    const GCLDIR_MOCK_MAKE: &str = "@echo off\r\nsetlocal EnableDelayedExpansion\r\nset \"arg=%~3\"\r\nif /I \"!arg:~0,7!\"==\"GCLDIR=\" set \"gcldir=!arg:~7!\"\r\nif defined gcldir > \"%~2\\gcldir.txt\" <nul set /p \"=!gcldir!\"\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\n";
+    const GCLDIR_MOCK_MAKE: &str = "@echo off\r\nsetlocal EnableDelayedExpansion\r\nset \"arg=%~3\"\r\nif /I \"!arg:~0,7!\"==\"GCLDIR=\" set \"gcldir=!arg:~7!\"\r\nif defined gcldir > \"%~2\\gcldir.txt\" <nul set /p \"=!gcldir!\"\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\nexit /b 0\r\n";
 
     fn write_mock_make(bin_dir: &Path, script: &str) -> PathBuf {
         #[cfg(windows)]
