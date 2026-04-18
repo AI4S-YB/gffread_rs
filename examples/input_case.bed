@@ -1,0 +1,3 @@
+chr1	99	300	coding1	100	+	119	250	0,0,0	2	51,101,	0,100,	geneID=g1;gene_name=G1
+chr1	399	480	noncoding1	100	+	399	480	0,0,0	2	21,31,	0,50,	geneID=g2;gene_name=G2
+chr1	599	650	single1	100	+	609	640	0,0,0	1	51,	0,	CDS=609:640;CDSphase=0;geneID=g3;gene_name=G3

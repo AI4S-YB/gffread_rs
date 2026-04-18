@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use gffread_core::compat::CompatError;
 use gffread_core::options::{
-    ClusterOptions, FastaOutputs, IdFilter, IdFilterMode, MainOutput, RangeFilter, RuntimeOptions,
+    ClusterOptions, FastaOutputs, IdFilter, IdFilterMode, InputFormat, MainOutput, RangeFilter,
+    RefSortOrder, RuntimeOptions,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,7 +15,7 @@ pub enum CommandMode {
     Run(RuntimeOptions),
 }
 
-pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
+pub fn parse_args(program: String, args: Vec<String>) -> Result<CommandMode, CompatError> {
     if args == ["--version"] {
         return Ok(CommandMode::Version);
     }
@@ -25,10 +26,16 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
 
     let mut expose_warnings = false;
     let mut output = None;
+    let mut track_label = None;
     let mut main_output = MainOutput::Gff3;
     let mut table_format = None;
     let mut attrs = None;
     let mut keep_all_attrs = false;
+    let mut gather_exon_attrs = false;
+    let mut keep_exon_attrs = false;
+    let mut keep_genes = false;
+    let mut keep_comments = false;
+    let mut decode_attrs = false;
     let mut genome = None;
     let mut fasta_outputs = FastaOutputs::default();
     let mut sort_alpha = false;
@@ -36,6 +43,7 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
     let mut range_filter = None;
     let mut range_within = false;
     let mut id_filter = None;
+    let mut input_format = InputFormat::Auto;
     let mut min_length = None;
     let mut max_intron = None;
     let mut coding_only = false;
@@ -50,6 +58,19 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
         match args[i].as_str() {
             "-E" | "-v" => expose_warnings = true,
             "-T" | "--gtf" => main_output = MainOutput::Gtf,
+            "--bed" => main_output = MainOutput::Bed,
+            "--tlf" => main_output = MainOutput::Tlf,
+            "-D" => decode_attrs = true,
+            "-F" => keep_all_attrs = true,
+            "-G" => {
+                gather_exon_attrs = true;
+                keep_all_attrs = true;
+            }
+            "--keep-exon-attrs" => keep_exon_attrs = true,
+            "--keep-genes" => keep_genes = true,
+            "--keep-comments" => keep_comments = true,
+            "--in-bed" => input_format = InputFormat::Bed,
+            "--in-tlf" => input_format = InputFormat::Tlf,
             "-W" => fasta_outputs.write_exon_segments = true,
             "-R" => range_within = true,
             "-M" | "--merge" => cluster.merge = true,
@@ -71,6 +92,13 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                     CompatError::new("Error: option -o requires an argument\n", 1)
                 })?;
                 output = Some(PathBuf::from(value));
+            }
+            "-t" => {
+                i += 1;
+                let value = args.get(i).ok_or_else(|| {
+                    CompatError::new("Error: option -t requires an argument\n", 1)
+                })?;
+                track_label = Some(value.clone());
             }
             "-r" => {
                 i += 1;
@@ -187,7 +215,7 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
                 fasta_outputs.padding = parse_u64_arg(value, "--w-add")?;
             }
             "--add-hasCDS" => {
-                return Ok(CommandMode::UsageError(CompatError::new(
+                return Ok(CommandMode::UsageError(CompatError::with_usage(
                     "Error: invalid argument '--add-hasCDS'\n",
                     1,
                 )));
@@ -217,6 +245,13 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
             "Error: options --sort-by and --sort-alpha are mutually exclusive!\n",
             1,
         ));
+    }
+
+    if keep_exon_attrs && !keep_all_attrs {
+        return Ok(CommandMode::UsageError(CompatError::new(
+            "Error: option --keep-exon-attrs requires option -F !\n",
+            0,
+        )));
     }
 
     if range_within && range_filter.is_none() {
@@ -268,16 +303,31 @@ pub fn parse_args(args: Vec<String>) -> Result<CommandMode, CompatError> {
         .expect("inputs must be non-empty after validation");
 
     Ok(CommandMode::Run(RuntimeOptions {
+        program,
         expose_warnings,
         output,
+        track_label,
         main_output,
         table_format,
         attrs,
         keep_all_attrs,
+        gather_exon_attrs,
+        keep_exon_attrs,
+        keep_genes,
+        keep_comments,
+        decode_attrs,
+        ref_sort_order: if let Some(path) = sort_by {
+            RefSortOrder::List(PathBuf::from(path))
+        } else if sort_alpha {
+            RefSortOrder::Alpha
+        } else {
+            RefSortOrder::Input
+        },
         genome,
         fasta_outputs,
         range_filter,
         id_filter,
+        input_format,
         min_length,
         max_intron,
         coding_only,
@@ -345,7 +395,8 @@ mod tests {
         let second_input = example_path("transcripts.gtf");
         let args = vec![first_input.clone(), second_input.clone()];
 
-        let mode = parse_args(args.clone()).expect("ordered positional inputs should parse");
+        let mode = parse_args("./gffread".to_owned(), args.clone())
+            .expect("ordered positional inputs should parse");
 
         match mode {
             CommandMode::Run(options) => {
@@ -357,6 +408,7 @@ mod tests {
                 assert_eq!(options.main_output, MainOutput::Gff3);
                 assert_eq!(options.output, None);
                 assert_eq!(options.original_args, args);
+                assert_eq!(options.program, "./gffread");
             }
             other => panic!("expected run mode, got {other:?}"),
         }

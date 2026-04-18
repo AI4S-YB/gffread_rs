@@ -1,0 +1,13 @@
+##gff-version 3
+chr1	src	mRNA	5	23	.	+	.	ID=tz;geneID=gz
+chr1	src	exon	5	10	.	+	.	Parent=tz
+chr1	src	exon	15	23	.	+	.	Parent=tz
+chr1	src	CDS	5	10	.	+	.	Parent=tz
+chr1	src	CDS	15	23	.	+	.	Parent=tz
+chr1	src	mRNA	5	23	.	+	.	ID=tdup;geneID=g1
+chr1	src	exon	5	10	.	+	.	Parent=tdup
+chr1	src	exon	15	23	.	+	.	Parent=tdup
+chr1	src	CDS	5	10	.	+	.	Parent=tdup
+chr1	src	CDS	15	23	.	+	.	Parent=tdup
+chr1	src	mRNA	5	23	.	+	.	ID=tdup;geneID=g1
+chr1	src	exon	5	23	.	+	.	Parent=tdup

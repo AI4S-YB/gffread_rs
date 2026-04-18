@@ -1,0 +1,5 @@
+chr1	src	mRNA	100	300	.	+	.	ID=tx1;Name=Tx1
+chr1	src	exon	100	150	.	+	.	Parent=tx1;score=5;shared=S;uniq=u1;exon_number=1
+chr1	src	exon	200	300	.	+	.	Parent=tx1;score=5;shared=S;uniq=u2;exon_number=2
+chr1	src	CDS	120	150	.	+	0	Parent=tx1;phaseattr=p;sharedcds=C;cdsuniq=c1
+chr1	src	CDS	200	260	.	+	2	Parent=tx1;phaseattr=p;sharedcds=C;cdsuniq=c2

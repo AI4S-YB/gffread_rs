@@ -22,7 +22,12 @@ pub fn apply_filters(
         .cloned()
         .collect();
 
-    Ok(Annotation { transcripts })
+    Ok(Annotation {
+        transcripts,
+        genes: annotation.genes.clone(),
+        ref_order: annotation.ref_order.clone(),
+        header_comments: annotation.header_comments.clone(),
+    })
 }
 
 fn passes_filters(

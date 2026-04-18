@@ -52,6 +52,6 @@ fn value_for(transcript: &Transcript, field: &TableField) -> String {
         TableField::End => transcript.end.to_string(),
         TableField::Strand => transcript.strand.to_string(),
         TableField::Exons => transcript.exon_list(),
-        TableField::Attr(name) => transcript.attrs.get(name).cloned().unwrap_or_default(),
+        TableField::Attr(name) => transcript.attrs.get(name).unwrap_or_default().to_owned(),
     }
 }

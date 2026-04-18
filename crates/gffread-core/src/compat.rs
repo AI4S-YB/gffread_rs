@@ -4,6 +4,7 @@ use std::fmt;
 pub struct CompatError {
     pub message: String,
     pub exit_code: i32,
+    pub show_usage: bool,
 }
 
 impl CompatError {
@@ -11,6 +12,15 @@ impl CompatError {
         Self {
             message: message.into(),
             exit_code,
+            show_usage: false,
+        }
+    }
+
+    pub fn with_usage(message: impl Into<String>, exit_code: i32) -> Self {
+        Self {
+            message: message.into(),
+            exit_code,
+            show_usage: true,
         }
     }
 }

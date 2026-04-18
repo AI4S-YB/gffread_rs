@@ -1,0 +1,7 @@
+chr1	src	gene	100	300	.	+	.	ID=g1;Name=Gene1
+chr1	src	mRNA	100	300	.	+	.	ID=tx1;Parent=g1;Name=Tx1
+chr1	src	exon	100	150	.	+	.	Parent=tx1
+chr1	src	exon	200	300	.	+	.	Parent=tx1
+chr1	src	gene	400	500	.	-	.	ID=g2;Name=Gene2
+chr1	src	mRNA	400	500	.	-	.	ID=tx2;Parent=g2
+chr1	src	exon	400	500	.	-	.	Parent=tx2

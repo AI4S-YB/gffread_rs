@@ -1,0 +1,2 @@
+chr1	src	mRNA	100	160	.	+	.	ID=tx%3B1;geneID=gene1;gene_name=Name%2COne;Note=percent%25semi%3Bcomma%2Cline%0Aend
+chr1	src	exon	100	160	.	+	.	Parent=tx%3B1

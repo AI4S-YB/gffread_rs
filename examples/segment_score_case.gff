@@ -1,0 +1,5 @@
+##gff-version 3
+chr1	src	gene	100	300	.	+	.	ID=g1;gene=g1
+chr1	src	mRNA	100	300	.	+	.	ID=t1;Parent=g1
+chr1	src	exon	100	150	5.5	+	.	Parent=t1
+chr1	src	CDS	120	150	7.7	+	.	Parent=t1

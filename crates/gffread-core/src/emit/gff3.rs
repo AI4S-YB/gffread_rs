@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use crate::emit::locus::write_locus;
-use crate::model::{Annotation, Locus, Transcript};
+use crate::model::{Annotation, Attrs, Gene, Locus, Segment, Transcript};
 
 pub fn write_gff3<W: Write>(
     out: &mut W,
@@ -9,28 +9,99 @@ pub fn write_gff3<W: Write>(
     loci: &[Locus],
     version: &str,
     command_line: &str,
+    track_label: Option<&str>,
     attrs_filter: Option<&[String]>,
     keep_all_attrs: bool,
+    gather_exon_attrs: bool,
+    keep_exon_attrs: bool,
+    keep_genes: bool,
+    keep_comments: bool,
+    decode_attrs: bool,
 ) -> io::Result<()> {
-    writeln!(out, "##gff-version 3")?;
-    writeln!(out, "# gffread v{version}")?;
-    writeln!(out, "# {command_line}")?;
+    if keep_comments {
+        for comment in &annotation.header_comments {
+            writeln!(out, "{comment}")?;
+        }
+    } else {
+        writeln!(out, "##gff-version 3")?;
+        writeln!(out, "# gffread v{version}")?;
+        writeln!(out, "# {command_line}")?;
+    }
 
     if loci.is_empty() {
-        for transcript in &annotation.transcripts {
-            write_transcript(out, transcript, attrs_filter, keep_all_attrs)?;
-        }
+        write_records(
+            out,
+            annotation,
+            None,
+            track_label,
+            attrs_filter,
+            keep_all_attrs,
+            gather_exon_attrs,
+            keep_exon_attrs,
+            keep_genes,
+            decode_attrs,
+        )?;
     } else {
         for locus in loci {
             write_locus(out, locus)?;
-            for transcript in annotation
-                .transcripts
-                .iter()
-                .filter(|transcript| transcript.locus.as_deref() == Some(locus.id.as_str()))
-            {
-                write_transcript(out, transcript, attrs_filter, keep_all_attrs)?;
+            write_records(
+                out,
+                annotation,
+                Some(locus.id.as_str()),
+                track_label,
+                attrs_filter,
+                keep_all_attrs,
+                gather_exon_attrs,
+                keep_exon_attrs,
+                keep_genes,
+                decode_attrs,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_records<W: Write>(
+    out: &mut W,
+    annotation: &Annotation,
+    locus_id: Option<&str>,
+    track_label: Option<&str>,
+    attrs_filter: Option<&[String]>,
+    keep_all_attrs: bool,
+    gather_exon_attrs: bool,
+    keep_exon_attrs: bool,
+    keep_genes: bool,
+    decode_attrs: bool,
+) -> io::Result<()> {
+    let transcripts = annotation
+        .transcripts
+        .iter()
+        .filter(|transcript| transcript.locus.as_deref() == locus_id);
+
+    let mut emitted_genes = Vec::<String>::new();
+    for transcript in transcripts {
+        if keep_genes {
+            if let Some(gene_id) = transcript.gene_id.as_deref() {
+                if !emitted_genes.iter().any(|id| id == gene_id) {
+                    if let Some(gene) = annotation.genes.iter().find(|gene| gene.id == gene_id) {
+                        write_gene(out, gene, track_label, keep_all_attrs, decode_attrs)?;
+                        emitted_genes.push(gene_id.to_owned());
+                    }
+                }
             }
         }
+        write_transcript(
+            out,
+            transcript,
+            track_label,
+            attrs_filter,
+            keep_all_attrs,
+            gather_exon_attrs,
+            keep_exon_attrs,
+            keep_genes,
+            decode_attrs,
+        )?;
     }
 
     Ok(())
@@ -39,14 +110,26 @@ pub fn write_gff3<W: Write>(
 fn write_transcript<W: Write>(
     out: &mut W,
     transcript: &Transcript,
+    track_label: Option<&str>,
     attrs_filter: Option<&[String]>,
     keep_all_attrs: bool,
+    gather_exon_attrs: bool,
+    keep_exon_attrs: bool,
+    keep_genes: bool,
+    decode_attrs: bool,
 ) -> io::Result<()> {
+    let source = track_label.unwrap_or(&transcript.source);
+    let transcript_attrs = merged_transcript_attrs(
+        transcript,
+        keep_all_attrs,
+        gather_exon_attrs,
+        keep_exon_attrs,
+    );
     write!(
         out,
         "{}\t{}\t{}\t{}\t{}\t.\t{}\t.\tID={}",
         transcript.seqid,
-        transcript.source,
+        source,
         transcript.feature,
         transcript.start,
         transcript.end,
@@ -55,11 +138,15 @@ fn write_transcript<W: Write>(
     )?;
 
     if let Some(gene_id) = &transcript.gene_id {
-        write!(out, ";geneID={gene_id}")?;
+        if keep_genes {
+            write!(out, ";Parent={}", attr_value(gene_id, decode_attrs))?;
+        } else {
+            write!(out, ";geneID={}", attr_value(gene_id, decode_attrs))?;
+        }
     }
 
     if let Some(gene_name) = &transcript.gene_name {
-        write!(out, ";gene_name={gene_name}")?;
+        write!(out, ";gene_name={}", attr_value(gene_name, decode_attrs))?;
     }
 
     if let Some(locus) = &transcript.locus {
@@ -67,16 +154,21 @@ fn write_transcript<W: Write>(
     }
 
     if keep_all_attrs {
-        for (attr_name, value) in &transcript.attrs {
-            if should_emit_extra_attr(attr_name) && !value.is_empty() {
-                write!(out, ";{attr_name}={value}")?;
+        for attr in transcript_attrs.iter() {
+            if should_emit_extra_attr(&attr.key) && !attr.value.is_empty() {
+                write!(
+                    out,
+                    ";{}={}",
+                    attr.key,
+                    attr_value(&attr.value, decode_attrs)
+                )?;
             }
         }
     } else if let Some(attrs_filter) = attrs_filter {
         for attr_name in attrs_filter {
-            if let Some(value) = transcript.attrs.get(attr_name) {
+            if let Some(value) = transcript_attrs.get(attr_name) {
                 if !value.is_empty() {
-                    write!(out, ";{attr_name}={value}")?;
+                    write!(out, ";{attr_name}={}", attr_value(value, decode_attrs))?;
                 }
             }
         }
@@ -85,33 +177,124 @@ fn write_transcript<W: Write>(
     writeln!(out)?;
 
     for exon in &transcript.exons {
-        writeln!(
+        write_segment(
             out,
-            "{}\t{}\texon\t{}\t{}\t.\t{}\t.\tParent={}",
-            transcript.seqid,
-            transcript.source,
-            exon.start,
-            exon.end,
-            transcript.strand,
-            transcript.id
+            transcript,
+            source,
+            exon,
+            &transcript.exons,
+            "exon",
+            keep_all_attrs,
+            gather_exon_attrs,
+            keep_exon_attrs,
+            decode_attrs,
         )?;
     }
 
     for cds in &transcript.cds {
-        writeln!(
+        write_segment(
             out,
-            "{}\t{}\tCDS\t{}\t{}\t.\t{}\t{}\tParent={}",
-            transcript.seqid,
-            transcript.source,
-            cds.start,
-            cds.end,
-            transcript.strand,
-            cds.phase,
-            transcript.id
+            transcript,
+            source,
+            cds,
+            &transcript.cds,
+            "CDS",
+            keep_all_attrs,
+            gather_exon_attrs,
+            keep_exon_attrs,
+            decode_attrs,
         )?;
     }
 
     Ok(())
+}
+
+fn write_segment<W: Write>(
+    out: &mut W,
+    transcript: &Transcript,
+    source: &str,
+    segment: &Segment,
+    sibling_segments: &[Segment],
+    feature: &str,
+    keep_all_attrs: bool,
+    gather_exon_attrs: bool,
+    keep_exon_attrs: bool,
+    decode_attrs: bool,
+) -> io::Result<()> {
+    let phase = if feature == "CDS" {
+        segment.phase.as_str()
+    } else {
+        "."
+    };
+    let score = if feature == "exon" {
+        segment.score.as_str()
+    } else {
+        "."
+    };
+    write!(
+        out,
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\tParent={}",
+        transcript.seqid,
+        source,
+        feature,
+        segment.start,
+        segment.end,
+        score,
+        transcript.strand,
+        phase,
+        transcript.id
+    )?;
+    if keep_all_attrs {
+        for attr in segment.attrs.iter() {
+            if !keep_exon_attrs
+                && should_skip_segment_attr(
+                    attr.key.as_str(),
+                    attr.value.as_str(),
+                    sibling_segments,
+                    gather_exon_attrs,
+                )
+            {
+                continue;
+            }
+            if !attr.value.is_empty() {
+                write!(
+                    out,
+                    ";{}={}",
+                    attr.key,
+                    attr_value(&attr.value, decode_attrs)
+                )?;
+            }
+        }
+    }
+    writeln!(out)
+}
+
+fn write_gene<W: Write>(
+    out: &mut W,
+    gene: &Gene,
+    track_label: Option<&str>,
+    keep_all_attrs: bool,
+    decode_attrs: bool,
+) -> io::Result<()> {
+    let source = track_label.unwrap_or(&gene.source);
+    write!(
+        out,
+        "{}\t{}\t{}\t{}\t{}\t.\t{}\t.\tID={}",
+        gene.seqid, source, gene.feature, gene.start, gene.end, gene.strand, gene.id
+    )?;
+    if keep_all_attrs {
+        for attr in gene.attrs.iter() {
+            if should_emit_gene_attr(attr.key.as_str()) && !attr.value.is_empty() {
+                write!(
+                    out,
+                    ";{}={}",
+                    attr.key,
+                    attr_value(&attr.value, decode_attrs)
+                )?;
+            }
+        }
+    }
+    writeln!(out)
 }
 
 fn should_emit_extra_attr(name: &str) -> bool {
@@ -119,4 +302,143 @@ fn should_emit_extra_attr(name: &str) -> bool {
         name,
         "ID" | "Parent" | "geneID" | "gene_id" | "gene_name" | "transcript_id"
     )
+}
+
+fn should_emit_gene_attr(name: &str) -> bool {
+    !matches!(name, "ID" | "geneID" | "gene_id" | "gene_name")
+}
+
+fn merged_transcript_attrs(
+    transcript: &Transcript,
+    keep_all_attrs: bool,
+    gather_exon_attrs: bool,
+    keep_exon_attrs: bool,
+) -> Attrs {
+    let mut attrs = transcript.attrs.clone();
+    if !keep_all_attrs || keep_exon_attrs {
+        return attrs;
+    }
+
+    if gather_exon_attrs {
+        copy_first_segment_attrs(&mut attrs, &transcript.exons);
+        copy_first_segment_attrs(&mut attrs, &transcript.cds);
+    } else {
+        reduce_segment_attrs(&mut attrs, &transcript.exons, "exon_");
+        reduce_segment_attrs(&mut attrs, &transcript.cds, "CDS_");
+    }
+
+    attrs
+}
+
+fn copy_first_segment_attrs(attrs: &mut Attrs, segments: &[Segment]) {
+    let Some(first) = segments.first() else {
+        return;
+    };
+    for attr in first.attrs.iter() {
+        if attr.key.starts_with("exon_") || attr.key == "exon" {
+            continue;
+        }
+        attrs.push_unique(attr.key.clone(), attr.value.clone());
+    }
+}
+
+fn reduce_segment_attrs(attrs: &mut Attrs, segments: &[Segment], prefix: &str) {
+    let Some(first) = segments.first() else {
+        return;
+    };
+    for attr in first.attrs.iter() {
+        let discard_all = matches!(attr.key.as_str(), "exon_id" | "exon_number");
+        let same_in_all = !discard_all
+            && segments
+                .iter()
+                .skip(1)
+                .all(|segment| segment.attrs.get(&attr.key) == Some(attr.value.as_str()));
+        if !same_in_all {
+            continue;
+        }
+
+        if let Some(existing) = attrs.get(&attr.key) {
+            if existing != attr.value {
+                attrs.push_unique(format!("{prefix}{}", attr.key), attr.value.clone());
+            }
+        } else {
+            attrs.push_unique(attr.key.clone(), attr.value.clone());
+        }
+    }
+}
+
+fn should_skip_segment_attr(
+    key: &str,
+    value: &str,
+    sibling_segments: &[Segment],
+    gather_exon_attrs: bool,
+) -> bool {
+    if gather_exon_attrs {
+        return true;
+    }
+    if matches!(key, "exon_id" | "exon_number") {
+        return true;
+    }
+    let Some(first) = sibling_segments.first() else {
+        return false;
+    };
+    first
+        .attrs
+        .get(key)
+        .is_some_and(|first_value| first_value == value)
+        && sibling_segments
+            .iter()
+            .skip(1)
+            .all(|segment| segment.attrs.get(key) == Some(value))
+}
+
+fn attr_value(value: &str, decode_attrs: bool) -> String {
+    if decode_attrs {
+        decode_hex_chars(value)
+    } else {
+        value.to_owned()
+    }
+}
+
+fn decode_hex_chars(value: &str) -> String {
+    let mut decoded = String::new();
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let (Some(high), Some(low)) =
+                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
+            {
+                let mut ch = (high << 4) + low;
+                index += 3;
+                if ch == b'%' {
+                    decoded.push_str("prc");
+                    continue;
+                }
+                if ch == b';' {
+                    ch = b'.';
+                } else if ch <= b'\t' {
+                    ch = b' ';
+                }
+                if ch >= b' ' {
+                    decoded.push(ch as char);
+                    continue;
+                }
+                decoded.push(bytes[index - 1] as char);
+                continue;
+            }
+        }
+        decoded.push(bytes[index] as char);
+        index += 1;
+    }
+    decoded
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }

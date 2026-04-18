@@ -3,6 +3,8 @@ mod parse;
 mod process;
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    std::process::exit(process::run_process(args));
+    let mut args = std::env::args();
+    let program = args.next().unwrap_or_else(|| "gffread-rs".to_owned());
+    let rest = args.collect::<Vec<_>>();
+    std::process::exit(process::run_process(program, rest));
 }

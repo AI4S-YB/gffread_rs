@@ -1,0 +1,7 @@
+##gff-version 3
+chr1	src	gene	100	200	.	+	.	ID=geneA;gene=geneA
+chr1	src	rRNA	100	200	.	+	.	ID=rrna1;Parent=geneA
+chr1	src	exon	100	200	.	+	.	Parent=rrna1
+chr2	src	gene	300	400	.	+	.	ID=geneA;gene=geneA
+chr2	src	rRNA	300	400	.	+	.	ID=rrna1;Parent=geneA
+chr2	src	exon	300	400	.	+	.	Parent=rrna1

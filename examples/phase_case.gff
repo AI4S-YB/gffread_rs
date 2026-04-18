@@ -1,0 +1,14 @@
+chr1	src	mRNA	100	320	.	+	.	ID=plus_missing_phase;geneID=g1
+chr1	src	exon	100	150	.	+	.	Parent=plus_missing_phase
+chr1	src	exon	200	260	.	+	.	Parent=plus_missing_phase
+chr1	src	exon	300	320	.	+	.	Parent=plus_missing_phase
+chr1	src	CDS	100	150	.	+	.	Parent=plus_missing_phase
+chr1	src	CDS	200	260	.	+	.	Parent=plus_missing_phase
+chr1	src	CDS	300	320	.	+	.	Parent=plus_missing_phase
+chr1	src	mRNA	500	720	.	-	.	ID=minus_missing_phase;geneID=g2
+chr1	src	exon	500	520	.	-	.	Parent=minus_missing_phase
+chr1	src	exon	560	620	.	-	.	Parent=minus_missing_phase
+chr1	src	exon	670	720	.	-	.	Parent=minus_missing_phase
+chr1	src	CDS	500	520	.	-	.	Parent=minus_missing_phase
+chr1	src	CDS	560	620	.	-	.	Parent=minus_missing_phase
+chr1	src	CDS	670	720	.	-	.	Parent=minus_missing_phase

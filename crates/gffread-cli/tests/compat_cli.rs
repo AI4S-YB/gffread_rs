@@ -55,3 +55,12 @@ fn first_missing_positional_input_matches_oracle() {
         .assert_matches_oracle(candidate())
         .expect("first missing positional input must match oracle");
 }
+
+#[test]
+fn keep_exon_attrs_requires_f_matches_oracle() {
+    CompatCase::new("keep_exon_attrs_requires_f")
+        .in_examples()
+        .args(["--keep-exon-attrs", "exon_attrs_case.gff"])
+        .assert_matches_oracle(candidate())
+        .expect("--keep-exon-attrs error surface must match oracle");
+}

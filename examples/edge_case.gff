@@ -1,0 +1,13 @@
+chr1	src	gene	1	40	.	+	.	ID=g1;gene=G1
+chr1	src	mRNA	1	40	.	+	.	ID=tx1;Parent=g1
+chr1	src	exon	1	5	.	+	.	Parent=tx1
+chr1	src	exon	4	10	.	+	2	Parent=tx1
+chr1	src	exon	20	25	.	+	1	Parent=tx1
+chr1	src	CDS	3	10	.	+	.	Parent=tx1
+chr1	src	CDS	20	22	.	+	.	Parent=tx1
+chr1	src	gene	41	70	.	-	.	ID=g2;gene=G2
+chr1	src	mRNA	41	70	.	-	.	ID=tx2;Parent=g2
+chr1	src	exon	41	48	.	-	.	Parent=tx2
+chr1	src	exon	55	62	.	-	0	Parent=tx2
+chr1	src	CDS	44	48	.	-	.	Parent=tx2
+chr1	src	CDS	55	60	.	-	.	Parent=tx2

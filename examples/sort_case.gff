@@ -1,0 +1,10 @@
+chr2	src	mRNA	300	330	.	+	.	ID=t2b
+chr2	src	exon	300	330	.	+	.	Parent=t2b
+chr1	src	mRNA	50	70	.	+	.	ID=t1
+chr1	src	exon	50	70	.	+	.	Parent=t1
+chr10	src	mRNA	10	30	.	+	.	ID=t10
+chr10	src	exon	10	30	.	+	.	Parent=t10
+chr2	src	mRNA	100	120	.	+	.	ID=t2a
+chr2	src	exon	100	120	.	+	.	Parent=t2a
+chr9	src	mRNA	150	170	.	+	.	ID=t9
+chr9	src	exon	150	170	.	+	.	Parent=t9

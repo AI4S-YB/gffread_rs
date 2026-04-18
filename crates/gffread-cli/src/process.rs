@@ -1,9 +1,10 @@
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 
 use gffread_core::cluster::apply_clustering;
 use gffread_core::compat::CompatError;
+use gffread_core::emit::{bed, tlf};
 use gffread_core::emit::{gff3, gtf, table};
 use gffread_core::fasta::{
     load_genome, write_cds_fasta, write_protein_fasta, write_transcript_fasta,
@@ -11,14 +12,16 @@ use gffread_core::fasta::{
 };
 use gffread_core::filters::apply_filters;
 use gffread_core::loader::gff::load_annotation;
+use gffread_core::model::Annotation;
 use gffread_core::options::{MainOutput, RuntimeOptions};
+use gffread_core::sort::{sort_annotation, sort_transcripts_for_fasta};
 use gffread_core::VERSION;
 
 use crate::help::USAGE;
 use crate::parse::{parse_args, CommandMode};
 
-pub fn run_process(args: Vec<String>) -> i32 {
-    match parse_args(args) {
+pub fn run_process(program: String, args: Vec<String>) -> i32 {
+    match parse_args(program, args) {
         Ok(CommandMode::Version) => {
             print!("{VERSION}\n");
             0
@@ -28,8 +31,10 @@ pub fn run_process(args: Vec<String>) -> i32 {
             1
         }
         Ok(CommandMode::UsageError(err)) => {
-            let _ = io::stderr().write_all(USAGE.as_bytes());
-            let _ = io::stderr().write_all(b"\n");
+            if err.show_usage {
+                let _ = io::stderr().write_all(USAGE.as_bytes());
+                let _ = io::stderr().write_all(b"\n");
+            }
             let _ = io::stderr().write_all(err.message.as_bytes());
             err.exit_code
         }
@@ -48,10 +53,6 @@ pub fn run_process(args: Vec<String>) -> i32 {
 }
 
 fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
-    let annotation = load_annotation(&options.input)?;
-    let annotation = apply_filters(&annotation, &options)?;
-    let (annotation, loci) = apply_clustering(&annotation, &options.cluster);
-    let command_line = oracle_command_line(&options.original_args);
     let need_genome = options.fasta_outputs.transcript.is_some()
         || options.fasta_outputs.unspliced.is_some()
         || options.fasta_outputs.cds.is_some()
@@ -67,7 +68,57 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
     } else {
         None
     };
+    let annotation = load_annotation(&options.input, options.input_format)?;
+    let filtered_annotation = apply_filters(&annotation, &options)?;
+    let mut annotation = filtered_annotation;
+    let command_line = command_line(&options.program, &options.original_args);
 
+    if !options.cluster.merge {
+        let fasta_annotation = Annotation {
+            transcripts: sort_transcripts_for_fasta(
+                &annotation.transcripts,
+                &options.ref_sort_order,
+                &annotation.ref_order,
+            )?,
+            genes: Vec::new(),
+            ref_order: annotation.ref_order.clone(),
+            header_comments: Vec::new(),
+        };
+        write_fasta_outputs(&options, &fasta_annotation, genome.as_ref())?;
+    }
+
+    sort_annotation(&mut annotation, &options.ref_sort_order, options.keep_genes)?;
+    let (mut annotation, mut loci) = apply_clustering(&annotation, &options.cluster);
+    if options.cluster.merge {
+        write_fasta_outputs(&options, &annotation, genome.as_ref())?;
+        sort_annotation(&mut annotation, &options.ref_sort_order, options.keep_genes)?;
+    }
+    let locus_rank = annotation
+        .ref_order
+        .iter()
+        .enumerate()
+        .map(|(index, seqid)| (seqid.as_str(), index))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    loci.sort_by(|left, right| {
+        (
+            locus_rank
+                .get(left.seqid.as_str())
+                .copied()
+                .unwrap_or(usize::MAX),
+            left.start,
+            left.end,
+            &left.id,
+        )
+            .cmp(&(
+                locus_rank
+                    .get(right.seqid.as_str())
+                    .copied()
+                    .unwrap_or(usize::MAX),
+                right.start,
+                right.end,
+                &right.id,
+            ))
+    });
     if options.expose_warnings {
         eprint!(
             "Command line was:\n{command_line}\n   .. loaded {} genomic features from {}\n",
@@ -89,8 +140,14 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                     &loci,
                     VERSION,
                     &command_line,
+                    options.track_label.as_deref(),
                     options.attrs.as_deref(),
                     options.keep_all_attrs,
+                    options.gather_exon_attrs,
+                    options.keep_exon_attrs,
+                    options.keep_genes,
+                    options.keep_comments,
+                    options.decode_attrs,
                 )
                 .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             } else if options.fasta_outputs.transcript.is_none()
@@ -106,109 +163,95 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                     &loci,
                     VERSION,
                     &command_line,
+                    options.track_label.as_deref(),
                     options.attrs.as_deref(),
                     options.keep_all_attrs,
+                    options.gather_exon_attrs,
+                    options.keep_exon_attrs,
+                    options.keep_genes,
+                    options.keep_comments,
+                    options.decode_attrs,
                 )
                 .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
             }
         }
         MainOutput::Gtf => {
-            let output = options.output.ok_or_else(|| {
-                CompatError::new("Error: output file is required in phase-one GTF path\n", 1)
-            })?;
-            let mut file = File::create(&output).map_err(|_| {
-                CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
-            })?;
+            if let Some(output) = &options.output {
+                let mut file = File::create(output).map_err(|_| {
+                    CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
+                })?;
 
-            gtf::write_gtf(&mut file, &annotation)
-                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+                gtf::write_gtf(&mut file, &annotation, options.track_label.as_deref())
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            } else {
+                let stdout = io::stdout();
+                let mut handle = stdout.lock();
+                gtf::write_gtf(&mut handle, &annotation, options.track_label.as_deref())
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            }
+        }
+        MainOutput::Bed => {
+            if let Some(output) = &options.output {
+                let mut file = File::create(output).map_err(|_| {
+                    CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
+                })?;
+                bed::write_bed(&mut file, &annotation)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            } else {
+                let stdout = io::stdout();
+                let mut handle = stdout.lock();
+                bed::write_bed(&mut handle, &annotation)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            }
+        }
+        MainOutput::Tlf => {
+            if let Some(output) = &options.output {
+                let mut file = File::create(output).map_err(|_| {
+                    CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
+                })?;
+                tlf::write_tlf(&mut file, &annotation, options.track_label.as_deref())
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            } else {
+                let stdout = io::stdout();
+                let mut handle = stdout.lock();
+                tlf::write_tlf(&mut handle, &annotation, options.track_label.as_deref())
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            }
         }
         MainOutput::Table => {
-            let output = options.output.ok_or_else(|| {
-                CompatError::new(
-                    "Error: output file is required in phase-one table path\n",
-                    1,
-                )
-            })?;
             let format = options
                 .table_format
                 .as_deref()
                 .ok_or_else(|| CompatError::new("Error: --table requires a format\n", 1))?;
-            let mut file = File::create(&output).map_err(|_| {
-                CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
-            })?;
+            if let Some(output) = &options.output {
+                let mut file = File::create(output).map_err(|_| {
+                    CompatError::new(format!("Error creating file: {}\n", output.display()), 1)
+                })?;
 
-            table::write_table(&mut file, &annotation, format)
-                .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
-        }
-    }
-
-    if need_genome {
-        let genome = genome
-            .as_ref()
-            .expect("genome must be loaded before FASTA outputs are written");
-
-        if let Some(path) = &options.fasta_outputs.transcript {
-            let mut file = File::create(path).map_err(|_| {
-                CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
-            })?;
-            write_transcript_fasta(
-                &mut file,
-                &annotation,
-                genome,
-                options.fasta_outputs.padding,
-                options.fasta_outputs.suppress_transcript_cds,
-                options.fasta_outputs.write_exon_segments,
-            )?;
-        }
-
-        if let Some(path) = &options.fasta_outputs.unspliced {
-            let mut file = File::create(path).map_err(|_| {
-                CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
-            })?;
-            write_unspliced_fasta(
-                &mut file,
-                &annotation,
-                genome,
-                options.fasta_outputs.padding,
-            )?;
-        }
-
-        if let Some(path) = &options.fasta_outputs.cds {
-            let mut file = File::create(path).map_err(|_| {
-                CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
-            })?;
-            write_cds_fasta(
-                &mut file,
-                &annotation,
-                &genome,
-                options.fasta_outputs.write_exon_segments,
-            )?;
-        }
-
-        if let Some(path) = &options.fasta_outputs.protein {
-            let mut file = File::create(path).map_err(|_| {
-                CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
-            })?;
-            write_protein_fasta(
-                &mut file,
-                &annotation,
-                genome,
-                options.fasta_outputs.write_protein_star_stop,
-                options.fasta_outputs.write_exon_segments,
-            )?;
+                table::write_table(&mut file, &annotation, format)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            } else {
+                let stdout = io::stdout();
+                let mut handle = stdout.lock();
+                table::write_table(&mut handle, &annotation, format)
+                    .map_err(|err| CompatError::new(format!("Error writing output: {err}\n"), 1))?;
+            }
         }
     }
 
     Ok(())
 }
 
-fn oracle_command_line(args: &[String]) -> String {
-    let oracle = workspace_root().join("gffread");
-    if args.is_empty() {
-        oracle.display().to_string()
+fn command_line(program: &str, args: &[String]) -> String {
+    let display_program = if program.ends_with("gffread-rs") {
+        workspace_root().join("gffread").display().to_string()
     } else {
-        format!("{} {}", oracle.display(), args.join(" "))
+        program.to_owned()
+    };
+    if args.is_empty() {
+        display_program
+    } else {
+        format!("{display_program} {}", args.join(" "))
     }
 }
 
@@ -220,14 +263,79 @@ fn workspace_root() -> PathBuf {
         .expect("workspace root must resolve")
 }
 
+fn write_fasta_outputs(
+    options: &RuntimeOptions,
+    annotation: &Annotation,
+    genome: Option<&gffread_core::fasta::Genome>,
+) -> Result<(), CompatError> {
+    let Some(genome) = genome else {
+        return Ok(());
+    };
+
+    if let Some(path) = &options.fasta_outputs.transcript {
+        let file = File::create(path).map_err(|_| {
+            CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
+        })?;
+        let mut file = BufWriter::new(file);
+        write_transcript_fasta(
+            &mut file,
+            annotation,
+            genome,
+            options.fasta_outputs.padding,
+            options.fasta_outputs.suppress_transcript_cds,
+            options.fasta_outputs.write_exon_segments,
+        )?;
+    }
+
+    if let Some(path) = &options.fasta_outputs.unspliced {
+        let file = File::create(path).map_err(|_| {
+            CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
+        })?;
+        let mut file = BufWriter::new(file);
+        write_unspliced_fasta(&mut file, annotation, genome, options.fasta_outputs.padding)?;
+    }
+
+    if let Some(path) = &options.fasta_outputs.cds {
+        let file = File::create(path).map_err(|_| {
+            CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
+        })?;
+        let mut file = BufWriter::new(file);
+        write_cds_fasta(
+            &mut file,
+            annotation,
+            genome,
+            options.fasta_outputs.write_exon_segments,
+        )?;
+    }
+
+    if let Some(path) = &options.fasta_outputs.protein {
+        let file = File::create(path).map_err(|_| {
+            CompatError::new(format!("Error creating file: {}\n", path.display()), 1)
+        })?;
+        let mut file = BufWriter::new(file);
+        write_protein_fasta(
+            &mut file,
+            annotation,
+            genome,
+            options.fasta_outputs.write_protein_star_stop,
+            options.fasta_outputs.write_exon_segments,
+            options.fasta_outputs.cds.is_none(),
+        )?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::run_outputs;
-    use gffread_core::options::{FastaOutputs, MainOutput, RuntimeOptions};
+    use gffread_core::options::{
+        FastaOutputs, InputFormat, MainOutput, RefSortOrder, RuntimeOptions,
+    };
 
     fn example_path(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -292,16 +400,25 @@ mod tests {
         genome: Option<PathBuf>,
     ) -> RuntimeOptions {
         RuntimeOptions {
+            program: "./gffread".to_owned(),
             expose_warnings: false,
             output: Some(output.to_path_buf()),
+            track_label: None,
             main_output: MainOutput::Gff3,
             table_format: None,
             attrs: None,
             keep_all_attrs: false,
+            gather_exon_attrs: false,
+            keep_exon_attrs: false,
+            keep_genes: false,
+            keep_comments: false,
+            decode_attrs: false,
+            ref_sort_order: RefSortOrder::Input,
             genome,
             fasta_outputs,
             range_filter: None,
             id_filter: None,
+            input_format: InputFormat::Auto,
             min_length: None,
             max_intron: None,
             coding_only: false,

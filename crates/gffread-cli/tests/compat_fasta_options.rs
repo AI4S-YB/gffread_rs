@@ -142,3 +142,63 @@ fn protein_fasta_with_projected_segments_matches_oracle() {
         .assert_matches_oracle(candidate())
         .expect("-W -y output must match oracle");
 }
+
+#[test]
+fn short_cds_warning_matches_oracle_for_cds_and_protein_outputs() {
+    CompatCase::new("short_cds_warning")
+        .in_examples()
+        .args([
+            "-x",
+            "cds.fa",
+            "-y",
+            "proteins.fa",
+            "-g",
+            "fasta_option_genome.fa",
+            "short_cds_warning_case.gff",
+        ])
+        .expected_files(["cds.fa", "proteins.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("short CDS warning and FASTA output must match oracle");
+}
+
+#[test]
+fn short_cds_warning_matches_oracle_for_protein_only_output() {
+    CompatCase::new("short_cds_warning_protein_only")
+        .in_examples()
+        .args([
+            "-y",
+            "proteins.fa",
+            "-g",
+            "fasta_option_genome.fa",
+            "short_cds_warning_case.gff",
+        ])
+        .expected_files(["proteins.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("short CDS warning for protein-only output must match oracle");
+}
+
+#[test]
+fn transcript_fasta_preserves_case_and_exon_merging_matches_oracle() {
+    CompatCase::new("edge_case_transcript_fasta")
+        .in_examples()
+        .args([
+            "-w",
+            "transcripts.fa",
+            "-g",
+            "edge_case.fa",
+            "edge_case.gff",
+        ])
+        .expected_files(["transcripts.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("transcript FASTA case preservation must match oracle");
+}
+
+#[test]
+fn cds_fasta_preserves_case_matches_oracle() {
+    CompatCase::new("edge_case_cds_fasta")
+        .in_examples()
+        .args(["-x", "cds.fa", "-g", "edge_case.fa", "edge_case.gff"])
+        .expected_files(["cds.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("CDS FASTA case preservation must match oracle");
+}

@@ -63,6 +63,9 @@ pub fn apply_clustering(
     (
         Annotation {
             transcripts: result,
+            genes: annotation.genes.clone(),
+            ref_order: annotation.ref_order.clone(),
+            header_comments: annotation.header_comments.clone(),
         },
         loci,
     )

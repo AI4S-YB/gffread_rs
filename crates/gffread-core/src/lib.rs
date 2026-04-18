@@ -6,5 +6,6 @@ pub mod filters;
 pub mod loader;
 pub mod model;
 pub mod options;
+pub mod sort;
 
 pub const VERSION: &str = "0.12.9";
