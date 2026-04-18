@@ -158,6 +158,7 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                 genome,
                 options.fasta_outputs.padding,
                 options.fasta_outputs.suppress_transcript_cds,
+                options.fasta_outputs.write_exon_segments,
             )?;
         }
 
@@ -194,6 +195,7 @@ fn run_outputs(options: RuntimeOptions) -> Result<(), CompatError> {
                 &annotation,
                 genome,
                 options.fasta_outputs.write_protein_star_stop,
+                options.fasta_outputs.write_exon_segments,
             )?;
         }
     }

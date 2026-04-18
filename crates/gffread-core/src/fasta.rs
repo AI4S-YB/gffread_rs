@@ -86,10 +86,12 @@ pub fn write_transcript_fasta<W: Write>(
     genome: &Genome,
     padding: u64,
     suppress_cds: bool,
+    write_segments: bool,
 ) -> Result<(), CompatError> {
     for transcript in &annotation.transcripts {
         let seq = spliced_sequence_with_padding(transcript, &transcript.exons, genome, padding)?;
-        let defline = transcript_defline(transcript, genome, padding, suppress_cds)?;
+        let defline =
+            transcript_defline(transcript, genome, padding, suppress_cds, write_segments)?;
         write_fasta_record(out, &defline, &seq, false)
             .map_err(|err| CompatError::new(format!("Error writing FASTA: {err}\n"), 1))?;
     }
@@ -138,6 +140,7 @@ pub fn write_protein_fasta<W: Write>(
     annotation: &Annotation,
     genome: &Genome,
     use_star_stop: bool,
+    write_segments: bool,
 ) -> Result<(), CompatError> {
     for transcript in &annotation.transcripts {
         if transcript.cds.is_empty() {
@@ -150,7 +153,13 @@ pub fn write_protein_fasta<W: Write>(
             continue;
         }
 
-        write_fasta_record(out, &transcript.id, protein.as_bytes(), use_star_stop)
+        let defline = if write_segments {
+            projected_defline(transcript, &transcript.cds)
+        } else {
+            transcript.id.clone()
+        };
+
+        write_fasta_record(out, &defline, protein.as_bytes(), use_star_stop)
             .map_err(|err| CompatError::new(format!("Error writing FASTA: {err}\n"), 1))?;
     }
     Ok(())
@@ -265,23 +274,76 @@ fn transcript_defline(
     genome: &Genome,
     padding: u64,
     suppress_cds: bool,
+    write_segments: bool,
 ) -> Result<String, CompatError> {
-    if suppress_cds {
-        return Ok(transcript.id.clone());
-    }
+    let mut defline = transcript.id.clone();
 
-    match projected_cds_span(transcript) {
-        Some((start, end)) => {
+    if !suppress_cds {
+        if let Some((start, end)) = projected_cds_span(transcript) {
             let prefix_padding = transcript_prefix_padding(transcript, genome, padding)?;
-            Ok(format!(
-                "{} CDS={}-{}",
-                transcript.id,
+            defline.push_str(&format!(
+                " CDS={}-{}",
                 start + prefix_padding,
                 end + prefix_padding
-            ))
+            ));
         }
-        None => Ok(transcript.id.clone()),
     }
+
+    if write_segments {
+        defline.push_str(&spliced_segments_suffix(transcript, padding, genome)?);
+    }
+
+    Ok(defline)
+}
+
+fn spliced_segments_suffix(
+    transcript: &Transcript,
+    padding: u64,
+    genome: &Genome,
+) -> Result<String, CompatError> {
+    let chrom = genome.get(&transcript.seqid).ok_or_else(|| {
+        CompatError::new(
+            format!(
+                "Error: couldn't find genomic sequence {}\n",
+                transcript.seqid
+            ),
+            1,
+        )
+    })?;
+
+    let chrom_len = chrom.len() as u64;
+    let left_padding = transcript.start.saturating_sub(1).min(padding);
+    let right_padding = chrom_len.saturating_sub(transcript.end).min(padding);
+
+    let mut suffix = format!(
+        " loc:{}|{}-{}|{} exons:{}",
+        transcript.seqid,
+        transcript.start,
+        transcript.end,
+        transcript.strand,
+        transcript.exon_list()
+    );
+
+    if padding > 0 {
+        suffix.push_str(&format!(" padding:{}|{}", left_padding, right_padding));
+    }
+
+    let mut offset = 1u64;
+    let mut parts = Vec::new();
+    for (index, exon) in transcript.exons.iter().enumerate() {
+        let extra_left = if index == 0 { left_padding } else { 0 };
+        let extra_right = if index + 1 == transcript.exons.len() {
+            right_padding
+        } else {
+            0
+        };
+        let len = segment_len(exon) + extra_left + extra_right;
+        parts.push(format!("{offset}-{}", offset + len - 1));
+        offset += len;
+    }
+
+    suffix.push_str(&format!(" segs:{}", parts.join(",")));
+    Ok(suffix)
 }
 
 fn projected_defline(transcript: &Transcript, segments: &[Segment]) -> String {

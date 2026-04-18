@@ -89,3 +89,56 @@ fn protein_fasta_with_star_stop_matches_oracle() {
         .assert_matches_oracle(candidate())
         .expect("-y -S output must match oracle");
 }
+
+#[test]
+fn transcript_fasta_with_projected_segments_matches_oracle() {
+    CompatCase::new("transcript_fasta_with_segments")
+        .in_examples()
+        .args([
+            "-W",
+            "-w",
+            "transcripts.fa",
+            "-g",
+            "fasta_option_genome.fa",
+            "fasta_option_case.gff",
+        ])
+        .expected_files(["transcripts.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("-W -w output must match oracle");
+}
+
+#[test]
+fn transcript_fasta_with_segments_and_padding_matches_oracle() {
+    CompatCase::new("transcript_fasta_with_segments_padding")
+        .in_examples()
+        .args([
+            "-W",
+            "-w",
+            "transcripts.fa",
+            "--w-add",
+            "2",
+            "-g",
+            "fasta_option_genome.fa",
+            "fasta_option_case.gff",
+        ])
+        .expected_files(["transcripts.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("-W -w --w-add output must match oracle");
+}
+
+#[test]
+fn protein_fasta_with_projected_segments_matches_oracle() {
+    CompatCase::new("protein_fasta_with_segments")
+        .in_examples()
+        .args([
+            "-W",
+            "-y",
+            "proteins.fa",
+            "-g",
+            "fasta_option_genome.fa",
+            "fasta_option_case.gff",
+        ])
+        .expected_files(["proteins.fa"])
+        .assert_matches_oracle(candidate())
+        .expect("-W -y output must match oracle");
+}
