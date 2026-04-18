@@ -350,8 +350,7 @@ mod tests {
     #[cfg(not(windows))]
     const REBUILD_MOCK_MAKE: &str = "#!/bin/sh\nprintf invoked > \"$2/gffread\"\n";
     #[cfg(windows)]
-    const REBUILD_MOCK_MAKE: &str =
-        "@echo off\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\n";
+    const REBUILD_MOCK_MAKE: &str = "@echo off\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\n";
 
     #[cfg(not(windows))]
     const GCLDIR_MOCK_MAKE: &str = "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    GCLDIR=*) printf '%s' \"${arg#GCLDIR=}\" > \"$2/gcldir.txt\" ;;\n  esac\ndone\nprintf invoked > \"$2/gffread\"\n";
