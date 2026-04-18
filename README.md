@@ -134,3 +134,21 @@ python3 scripts/compare_demodata.py \
   --oracle ./gffread \
   --rust target/release/gffread-rs
 ```
+
+## CI and releases
+
+GitHub Actions runs the CI workflow on pushes and pull requests targeting
+`master`. The workflow checks formatting, runs clippy, builds the workspace,
+runs Rust-only tests on Linux/macOS/Windows, and runs C++ oracle compatibility
+tests on Linux and macOS.
+
+Releases are built by pushing a `v*` tag, for example:
+
+```bash
+git tag v0.1.0
+git push ai4s v0.1.0
+```
+
+The Release workflow can also be started manually from GitHub Actions with a tag
+input. Release assets include platform-specific `gffread-rs` binaries for Linux
+GNU, Linux musl, macOS arm64, and Windows MSVC, plus SHA-256 checksums.
