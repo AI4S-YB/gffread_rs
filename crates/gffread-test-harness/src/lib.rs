@@ -344,7 +344,39 @@ fn diff_bytes(label: &str, oracle: &[u8], candidate: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    #[cfg(not(windows))]
+    const REBUILD_MOCK_MAKE: &str = "#!/bin/sh\nprintf invoked > \"$2/gffread\"\n";
+    #[cfg(windows)]
+    const REBUILD_MOCK_MAKE: &str =
+        "@echo off\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\n";
+
+    #[cfg(not(windows))]
+    const GCLDIR_MOCK_MAKE: &str = "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    GCLDIR=*) printf '%s' \"${arg#GCLDIR=}\" > \"$2/gcldir.txt\" ;;\n  esac\ndone\nprintf invoked > \"$2/gffread\"\n";
+    #[cfg(windows)]
+    const GCLDIR_MOCK_MAKE: &str = "@echo off\r\nsetlocal EnableDelayedExpansion\r\nset \"arg=%~3\"\r\nif /I \"!arg:~0,7!\"==\"GCLDIR=\" set \"gcldir=!arg:~7!\"\r\nif defined gcldir > \"%~2\\gcldir.txt\" <nul set /p \"=!gcldir!\"\r\n> \"%~2\\gffread\" <nul set /p \"=invoked\"\r\n";
+
+    fn write_mock_make(bin_dir: &Path, script: &str) -> PathBuf {
+        #[cfg(windows)]
+        let make_path = bin_dir.join("make.cmd");
+        #[cfg(not(windows))]
+        let make_path = bin_dir.join("make");
+
+        fs::write(&make_path, script).expect("make script should be written");
+
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&make_path)
+                .expect("make script metadata should exist")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&make_path, permissions).expect("make script should be executable");
+        }
+
+        make_path
+    }
 
     #[test]
     fn different_output_filenames_with_same_count_are_reported() {
@@ -386,22 +418,7 @@ mod tests {
 
         let bin_dir = tempdir.path().join("bin");
         fs::create_dir(&bin_dir).expect("bin dir should be created");
-        let make_path = bin_dir.join("make");
-        let mut make_script = fs::File::create(&make_path).expect("make script should be created");
-        writeln!(make_script, "#!/bin/sh\nprintf invoked > \"$2/gffread\"\n")
-            .expect("make script should be written");
-        drop(make_script);
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let mut permissions = fs::metadata(&make_path)
-                .expect("make script metadata should exist")
-                .permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&make_path, permissions).expect("make script should be executable");
-        }
+        let make_path = write_mock_make(&bin_dir, REBUILD_MOCK_MAKE);
 
         let oracle = ensure_oracle_binary_with_make(&repo_root, &make_path)
             .expect("oracle binary should be ensured");
@@ -427,25 +444,7 @@ mod tests {
 
         let bin_dir = tempdir.path().join("bin");
         fs::create_dir(&bin_dir).expect("bin dir should be created");
-        let make_path = bin_dir.join("make");
-        let mut make_script = fs::File::create(&make_path).expect("make script should be created");
-        writeln!(
-            make_script,
-            "#!/bin/sh\nfor arg in \"$@\"; do\n  case \"$arg\" in\n    GCLDIR=*) printf '%s' \"${{arg#GCLDIR=}}\" > \"$2/gcldir.txt\" ;;\n  esac\ndone\nprintf invoked > \"$2/gffread\"\n"
-        )
-        .expect("make script should be written");
-        drop(make_script);
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let mut permissions = fs::metadata(&make_path)
-                .expect("make script metadata should exist")
-                .permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&make_path, permissions).expect("make script should be executable");
-        }
+        let make_path = write_mock_make(&bin_dir, GCLDIR_MOCK_MAKE);
 
         ensure_oracle_binary_with_make(&repo_root, &make_path)
             .expect("oracle binary should be ensured");
