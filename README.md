@@ -41,6 +41,23 @@ The release binary is written to:
 target/release/gffread-rs
 ```
 
+## Pixi development environment
+
+This repository includes a [pixi](https://pixi.sh) workspace that provides the
+Rust toolchain and the common development tasks without a global Rust install:
+
+```bash
+pixi install          # create the local environment
+pixi run build        # cargo build --workspace
+pixi run fmt          # cargo fmt --all -- --check
+pixi run clippy       # cargo clippy --workspace --all-targets -- -D warnings
+pixi run test         # Rust-only unit and smoke tests
+pixi run test-compat  # build the C++ oracle and run compatibility tests
+```
+
+`pixi run test-compat` clones gclib into `.worktrees/gclib` and builds the
+repository-local `./gffread` oracle, mirroring the CI compatibility jobs.
+
 ## Compatibility evaluation
 
 The current parity target is function-to-function algorithmic compatibility and
