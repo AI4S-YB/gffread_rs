@@ -1,0 +1,18 @@
+[workspace]
+channels = ["conda-forge"]
+name = "gffread-rs"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+fmt = "cargo fmt --all -- --check"
+fmt-fix = "cargo fmt --all"
+clippy = "cargo clippy --workspace --all-targets -- -D warnings"
+build = "cargo build --workspace --verbose"
+test = { cmd = "cargo test -p gffread-core --verbose && cargo test -p gffread-test-harness --verbose && cargo test -p gffread-rs --test version_smoke --verbose", depends-on = ["build"] }
+gclib = "test -e .worktrees/gclib/GBase.h || git clone --depth 1 https://github.com/gpertea/gclib.git .worktrees/gclib"
+oracle = { cmd = "make GCLDIR=$PIXI_PROJECT_ROOT/.worktrees/gclib gffread", depends-on = ["gclib"] }
+test-compat = { cmd = "cargo test -p gffread-rs --test version_oracle --verbose && cargo test -p gffread-rs --test compat_cli --verbose && cargo test -p gffread-rs --test compat_examples --verbose && cargo test -p gffread-rs --test compat_fasta_options --verbose", depends-on = ["oracle"] }
+
+[dependencies]
+rust = ">=1.97.1,<1.98"

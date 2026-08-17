@@ -425,6 +425,38 @@ fn table_conversion_matches_oracle() {
 }
 
 #[test]
+fn table_geneid_conversion_matches_oracle() {
+    CompatCase::new("example_table_geneid")
+        .in_examples()
+        .args([
+            "--table",
+            "@id,@GENEID,@chr,@start,@end,@strand,@exons",
+            "-o",
+            "annotation_geneid.tbl",
+            "annotation.gff",
+        ])
+        .expected_files(["annotation_geneid.tbl"])
+        .assert_matches_oracle(candidate())
+        .expect("table @geneid output must match oracle");
+}
+
+#[test]
+fn table_geneid_alias_matches_oracle_for_gtf_input() {
+    CompatCase::new("example_table_geneid_alias")
+        .in_examples()
+        .args([
+            "--table",
+            "transcript_id,gene_id,@chr,@start,@end,@strand,@exons",
+            "-o",
+            "transcripts_geneid.tbl",
+            "transcripts.gtf",
+        ])
+        .expected_files(["transcripts_geneid.tbl"])
+        .assert_matches_oracle(candidate())
+        .expect("table gene_id output must match oracle for GTF input");
+}
+
+#[test]
 fn transcript_fasta_matches_oracle() {
     CompatCase::new("example_transcript_fasta")
         .in_examples()
